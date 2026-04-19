@@ -3,7 +3,7 @@ services:
     name: meowtetr-backend
     env: node
     plan: free
-    buildCommand: npm install && npm run build && npx prisma generate
+    buildCommand: npm install && npm run build && npx prisma generate && npx prisma db push
     startCommand: npm start
     healthCheckPath: /health
     envVars:
@@ -22,7 +22,6 @@ services:
 
 databases:
   - name: meowtetr-db
-    databaseName: postgres
+    databaseName: meowtetr
     user: postgres
-    region: singapore
-    ipAllowList: []
+    plan: free
