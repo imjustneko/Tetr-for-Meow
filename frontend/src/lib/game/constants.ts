@@ -1,6 +1,7 @@
 export const BOARD_WIDTH = 10;
 export const BOARD_HEIGHT = 20;
 export const HIDDEN_ROWS = 3;
+export const BOARD_TOTAL_HEIGHT = BOARD_HEIGHT + HIDDEN_ROWS;
 
 export const GRAVITY_TABLE: Record<number, number> = {
   1: 1000,

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { BOARD_WIDTH, BOARD_HEIGHT, PIECE_COLORS } from '@/lib/game/constants';
+import { BOARD_WIDTH, BOARD_HEIGHT, HIDDEN_ROWS, PIECE_COLORS } from '@/lib/game/constants';
 import type { Board, CellValue } from '@/lib/game/types';
 
 const PIECE_TYPE_MAP = ['', 'I', 'O', 'T', 'S', 'Z', 'J', 'L', 'G'];
@@ -50,7 +50,7 @@ export function OpponentCanvas({ board, cellSize = 18, label = 'Opponent' }: Opp
     if (grid) {
       for (let row = 0; row < BOARD_HEIGHT; row++) {
         for (let col = 0; col < BOARD_WIDTH; col++) {
-          const cell = grid[row]?.[col] ?? 0;
+          const cell = grid[row + HIDDEN_ROWS]?.[col] ?? 0;
           if (cell === 0) continue;
           const pieceType = PIECE_TYPE_MAP[cell] ?? 'G';
           const px = col * cellSize;

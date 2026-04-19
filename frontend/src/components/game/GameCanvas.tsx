@@ -2,7 +2,7 @@
 
 import { useLayoutEffect, useRef } from 'react';
 import type { GameState } from '@/lib/game/types';
-import { BOARD_WIDTH, BOARD_HEIGHT, PIECE_COLORS, PIECE_GHOST_COLORS } from '@/lib/game/constants';
+import { BOARD_WIDTH, BOARD_HEIGHT, HIDDEN_ROWS, PIECE_COLORS, PIECE_GHOST_COLORS } from '@/lib/game/constants';
 import { getGhostPosition } from '@/lib/game/board';
 import { getPieceMatrix } from '@/lib/game/tetrominos';
 
@@ -47,7 +47,7 @@ export function GameCanvas({ gameState, cellSize = 30, suppressGameOverOverlay =
 
     for (let row = 0; row < BOARD_HEIGHT; row++) {
       for (let col = 0; col < BOARD_WIDTH; col++) {
-        const cell = gameState.board[row][col];
+        const cell = gameState.board[row + HIDDEN_ROWS]?.[col] ?? 0;
         if (cell === 0) continue;
         const pieceType = PIECE_TYPE_MAP[cell] ?? 'G';
         drawCell(ctx, col, row, PIECE_COLORS[pieceType] ?? '#888', cellSize);
@@ -64,8 +64,9 @@ export function GameCanvas({ gameState, cellSize = 30, suppressGameOverOverlay =
           if (matrix[row][col] === 0) continue;
           const boardX = gameState.activePiece.position.x + col;
           const boardY = ghost.y + row;
-          if (boardY >= 0 && boardY < BOARD_HEIGHT) {
-            drawCellGhost(ctx, boardX, boardY, ghostColor, cellSize);
+          const viewY = boardY - HIDDEN_ROWS;
+          if (viewY >= 0 && viewY < BOARD_HEIGHT) {
+            drawCellGhost(ctx, boardX, viewY, ghostColor, cellSize);
           }
         }
       }
@@ -76,8 +77,9 @@ export function GameCanvas({ gameState, cellSize = 30, suppressGameOverOverlay =
           if (matrix[row][col] === 0) continue;
           const boardX = gameState.activePiece.position.x + col;
           const boardY = gameState.activePiece.position.y + row;
-          if (boardY >= 0 && boardY < BOARD_HEIGHT) {
-            drawCell(ctx, boardX, boardY, activeColor, cellSize);
+          const viewY = boardY - HIDDEN_ROWS;
+          if (viewY >= 0 && viewY < BOARD_HEIGHT) {
+            drawCell(ctx, boardX, viewY, activeColor, cellSize);
           }
         }
       }

@@ -11,6 +11,7 @@ import {
   detectTSpin,
   isPerfectClear,
   getHardDropDistance,
+  isTopOut,
 } from './board';
 
 const NEXT_QUEUE_SIZE = 5;
@@ -286,6 +287,14 @@ export class GameEngine {
     this.state.activePiece = null;
     this.state.canHold = true;
     this.lastMoveWasRotation = false;
+
+    // TETR.IO-style: if the stack reaches hidden rows after placement/clears, end immediately.
+    if (isTopOut(this.state.board)) {
+      this.state.isGameOver = true;
+      this.onGameOver({ ...this.state });
+      cancelAnimationFrame(this.animFrameId);
+      return;
+    }
 
     if (this.checkModeCompletion()) return;
 

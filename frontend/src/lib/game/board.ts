@@ -1,9 +1,10 @@
 import type { Board, ActivePiece, CellValue, Position } from './types';
-import { BOARD_WIDTH, BOARD_HEIGHT } from './constants';
+import { BOARD_WIDTH, BOARD_HEIGHT, BOARD_TOTAL_HEIGHT, HIDDEN_ROWS } from './constants';
 import { getPieceMatrix, WALL_KICKS_JLSTZ, WALL_KICKS_I } from './tetrominos';
 
 export function createBoard(): Board {
-  return Array.from({ length: BOARD_HEIGHT }, () => Array(BOARD_WIDTH).fill(0) as CellValue[]);
+  // Internal board includes hidden rows (TETR.IO-style spawn buffer).
+  return Array.from({ length: BOARD_TOTAL_HEIGHT }, () => Array(BOARD_WIDTH).fill(0) as CellValue[]);
 }
 
 export function cloneBoard(board: Board): Board {
@@ -28,7 +29,7 @@ export function isValidPosition(
 
       if (boardX < 0 || boardX >= BOARD_WIDTH) return false;
 
-      if (boardY >= BOARD_HEIGHT) return false;
+      if (boardY >= BOARD_TOTAL_HEIGHT) return false;
 
       if (board[boardY][boardX] !== 0) return false;
     }
@@ -45,7 +46,7 @@ export function lockPiece(board: Board, piece: ActivePiece): Board {
       if (matrix[row][col] === 0) continue;
       const boardX = piece.position.x + col;
       const boardY = piece.position.y + row;
-      if (boardY >= 0 && boardY < BOARD_HEIGHT) {
+      if (boardY >= 0 && boardY < BOARD_TOTAL_HEIGHT) {
         newBoard[boardY][boardX] = matrix[row][col] as CellValue;
       }
     }
@@ -55,7 +56,7 @@ export function lockPiece(board: Board, piece: ActivePiece): Board {
 
 export function clearLines(board: Board): { board: Board; linesCleared: number } {
   const newBoard = board.filter((row) => row.some((cell) => cell === 0));
-  const linesCleared = BOARD_HEIGHT - newBoard.length;
+  const linesCleared = BOARD_TOTAL_HEIGHT - newBoard.length;
 
   const emptyRows = Array.from({ length: linesCleared }, () => Array(BOARD_WIDTH).fill(0) as CellValue[]);
 
@@ -164,7 +165,7 @@ export function detectTSpin(
   ];
 
   const occupiedCorners = corners.filter(([cx, cy]) => {
-    if (cx < 0 || cx >= BOARD_WIDTH || cy < 0 || cy >= BOARD_HEIGHT) return true;
+    if (cx < 0 || cx >= BOARD_WIDTH || cy < 0 || cy >= BOARD_TOTAL_HEIGHT) return true;
     return board[cy]?.[cx] !== 0;
   }).length;
 
@@ -191,7 +192,7 @@ export function detectTSpin(
 
   const front = frontCorners[rotation];
   const frontOccupied = front.filter(([cx, cy]) => {
-    if (cx < 0 || cx >= BOARD_WIDTH || cy < 0 || cy >= BOARD_HEIGHT) return true;
+    if (cx < 0 || cx >= BOARD_WIDTH || cy < 0 || cy >= BOARD_TOTAL_HEIGHT) return true;
     return board[cy]?.[cx] !== 0;
   }).length;
 
@@ -208,6 +209,15 @@ export function getHardDropDistance(board: Board, piece: ActivePiece): number {
   return ghost.y - piece.position.y;
 }
 
-export function isTopOut(board: Board, piece: ActivePiece): boolean {
-  return !isValidPosition(board, piece);
+/**
+ * Top-out when any blocks occupy the hidden spawn buffer rows.
+ * (i.e. stack reaches into rows [0..HIDDEN_ROWS-1]).
+ */
+export function isTopOut(board: Board): boolean {
+  for (let y = 0; y < HIDDEN_ROWS; y++) {
+    const row = board[y];
+    if (!row) continue;
+    if (row.some((c) => c !== 0)) return true;
+  }
+  return false;
 }
