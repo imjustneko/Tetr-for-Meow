@@ -12,6 +12,15 @@ import userRoutes from './routes/users';
 import { initSocket } from './socket';
 import type { JwtPayload } from './types';
 
+/** Browsers send Origin without a trailing slash; env vars often include one. */
+function normalizeFrontendOrigin(url: string): string {
+  return url.replace(/\/+$/, '') || 'http://localhost:3000';
+}
+
+const frontendOrigin = normalizeFrontendOrigin(
+  process.env.FRONTEND_URL || 'http://localhost:3000'
+);
+
 const app = express();
 const httpServer = createServer(app);
 
@@ -19,7 +28,7 @@ const io = new Server<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, { us
   httpServer,
   {
     cors: {
-      origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+      origin: frontendOrigin,
       credentials: true,
     },
   }
@@ -27,7 +36,7 @@ const io = new Server<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, { us
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: frontendOrigin,
   credentials: true,
 }));
 app.use(express.json());

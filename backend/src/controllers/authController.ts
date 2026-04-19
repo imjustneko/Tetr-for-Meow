@@ -1,8 +1,17 @@
-import { Request, Response } from 'express';
+import { CookieOptions, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { signAccessToken, signRefreshToken } from '../utils/jwt';
 import { prisma } from '../lib/prisma';
+
+const isProduction = process.env.NODE_ENV === 'production';
+
+const cookieOptions: CookieOptions = {
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? 'none' : 'lax',
+  maxAge: 30 * 24 * 60 * 60 * 1000,
+};
 
 const registerSchema = z.object({
   username: z.string().min(3).max(20).regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores'),
@@ -51,11 +60,7 @@ export async function register(req: Request, res: Response): Promise<void> {
     const accessToken = signAccessToken(payload);
     const refreshToken = signRefreshToken(payload);
 
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      sameSite: 'strict',
-      maxAge: 30 * 24 * 60 * 60 * 1000,
-    });
+    res.cookie('refreshToken', refreshToken, cookieOptions);
 
     res.status(201).json({
       accessToken,
@@ -98,11 +103,7 @@ export async function login(req: Request, res: Response): Promise<void> {
     const accessToken = signAccessToken(payload);
     const refreshToken = signRefreshToken(payload);
 
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      sameSite: 'strict',
-      maxAge: 30 * 24 * 60 * 60 * 1000,
-    });
+    res.cookie('refreshToken', refreshToken, cookieOptions);
 
     res.status(200).json({
       accessToken,
@@ -120,7 +121,11 @@ export async function login(req: Request, res: Response): Promise<void> {
 }
 
 export async function logout(req: Request, res: Response): Promise<void> {
-  res.clearCookie('refreshToken');
+  res.clearCookie('refreshToken', {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
+  });
   res.status(200).json({ message: 'Logged out' });
 }
 
