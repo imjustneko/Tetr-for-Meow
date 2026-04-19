@@ -1,6 +1,7 @@
 import { DefaultEventsMap, Server, Socket } from 'socket.io';
 import { verifyAccessToken } from '../utils/jwt';
 import type { GameRoom, JwtPayload, RoomPlayer } from '../types';
+import { prisma } from '../lib/prisma';
 
 type AuthedIoServer = Server<
   DefaultEventsMap,
@@ -17,6 +18,68 @@ type AuthedSocket = Socket<
 
 const rooms = new Map<string, GameRoom>();
 const playerToRoom = new Map<string, string>();
+
+function normalizeQueueMode(mode?: string): 'versus' | 'league' {
+  return mode === 'league' ? 'league' : 'versus';
+}
+
+function expectedRoundsTarget(room: GameRoom): number {
+  return room.series?.targetWins ?? 1;
+}
+
+function expectedBestOf(room: GameRoom): number {
+  return room.series?.bestOf ?? 1;
+}
+
+function getSeriesWins(room: GameRoom, userId: string): number {
+  if (!room.series) return 0;
+  return room.series.wins[userId] ?? 0;
+}
+
+function calculateEloDelta(winnerRating: number, loserRating: number, k = 24): number {
+  const expectedWinner = 1 / (1 + 10 ** ((loserRating - winnerRating) / 400));
+  return Math.max(5, Math.round(k * (1 - expectedWinner)));
+}
+
+async function applyRatingResult(winner: RoomPlayer, loser: RoomPlayer): Promise<{ delta: number } | null> {
+  try {
+    const winnerRow = await prisma.user.findUnique({
+      where: { id: winner.userId },
+      select: { rating: true },
+    });
+    const loserRow = await prisma.user.findUnique({
+      where: { id: loser.userId },
+      select: { rating: true },
+    });
+    const winnerRating = winnerRow?.rating ?? winner.rating ?? 1000;
+    const loserRating = loserRow?.rating ?? loser.rating ?? 1000;
+    const delta = calculateEloDelta(winnerRating, loserRating);
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: winner.userId },
+        data: { rating: { increment: delta } },
+      }),
+      prisma.user.update({
+        where: { id: loser.userId },
+        data: { rating: { decrement: delta } },
+      }),
+      prisma.userStats.update({
+        where: { userId: winner.userId },
+        data: { gamesPlayed: { increment: 1 }, wins: { increment: 1 } },
+      }),
+      prisma.userStats.update({
+        where: { userId: loser.userId },
+        data: { gamesPlayed: { increment: 1 }, losses: { increment: 1 } },
+      }),
+    ]);
+    winner.rating = winnerRating + delta;
+    loser.rating = loserRating - delta;
+    return { delta };
+  } catch (err) {
+    console.error('[ELO] Failed to update ratings', err);
+    return null;
+  }
+}
 
 function generateRoomCode(): string {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -41,12 +104,13 @@ export function initSocket(io: AuthedIoServer): void {
     const user = socket.data.user;
     console.log(`[Socket] Connected: ${user.username} (${socket.id})`);
 
-    socket.on('join_queue', () => {
+    socket.on('join_queue', (payload?: { mode?: string }) => {
+      const queueMode = normalizeQueueMode(payload?.mode);
       let foundRoom: GameRoom | null = null;
 
       for (const [, room] of rooms) {
         if (
-          room.mode === 'versus' &&
+          room.mode === queueMode &&
           room.status === 'waiting' &&
           room.players.length < 2 &&
           !room.roomCode
@@ -62,26 +126,49 @@ export function initSocket(io: AuthedIoServer): void {
         const roomId = generateRoomCode();
         const newRoom: GameRoom = {
           id: roomId,
-          mode: 'versus',
+          mode: queueMode,
           status: 'waiting',
           players: [],
+          series:
+            queueMode === 'league'
+              ? {
+                  bestOf: 3,
+                  targetWins: 2,
+                  wins: {},
+                }
+              : undefined,
+          matchResolved: false,
         };
         rooms.set(roomId, newRoom);
         joinRoom(socket, roomId, user, io);
       }
     });
 
-    socket.on('leave_queue', () => leaveRoom(socket, io));
-    socket.on('leave_room', () => leaveRoom(socket, io));
+    socket.on('leave_queue', () => {
+      void leaveRoom(socket, io);
+    });
+    socket.on('leave_room', () => {
+      void leaveRoom(socket, io);
+    });
 
     socket.on('create_room', ({ mode }: { mode?: string }) => {
       const roomCode = generateRoomCode();
+      const roomMode = normalizeQueueMode(mode);
       const room: GameRoom = {
         id: roomCode,
-        mode: mode || 'versus',
+        mode: roomMode,
         status: 'waiting',
         roomCode,
         players: [],
+        series:
+          roomMode === 'league'
+            ? {
+                bestOf: 3,
+                targetWins: 2,
+                wins: {},
+              }
+            : undefined,
+        matchResolved: false,
       };
       rooms.set(roomCode, room);
       joinRoom(socket, roomCode, user, io);
@@ -192,20 +279,21 @@ export function initSocket(io: AuthedIoServer): void {
 
         const alivePlayers = room.players.filter((p) => p.alive);
         if (alivePlayers.length <= 1) {
-          room.status = 'finished';
           const winner = alivePlayers[0] || null;
-          io.to(roomId).emit('game_over', {
-            winner: winner?.userId || null,
-            winnerUsername: winner?.username || null,
-            players: room.players.map((p) => ({ userId: p.userId, username: p.username, alive: p.alive })),
-          });
+          const loser = room.players.find((p) => p.userId === user.userId) || null;
+          if (!winner || !loser) {
+            room.status = 'finished';
+            io.to(roomId).emit('game_over', { winner: winner?.userId ?? null });
+            return;
+          }
+          void finishRound(io, room, winner, loser);
         }
       }
     });
 
     socket.on('disconnect', () => {
       console.log(`[Socket] Disconnected: ${user.username}`);
-      leaveRoom(socket, io);
+      void leaveRoom(socket, io);
     });
   });
 }
@@ -251,7 +339,7 @@ function joinRoom(
   }
 }
 
-function leaveRoom(socket: AuthedSocket, io: AuthedIoServer): void {
+async function leaveRoom(socket: AuthedSocket, io: AuthedIoServer): Promise<void> {
   const roomId = playerToRoom.get(socket.id);
   if (!roomId) return;
 
@@ -280,8 +368,88 @@ function leaveRoom(socket: AuthedSocket, io: AuthedIoServer): void {
   room.status = 'waiting';
   io.to(roomId).emit('room_update', sanitizeRoom(room));
   if (wasPlaying) {
+    const winner = room.players[0] ?? null;
+    if (winner && !room.matchResolved) {
+      room.matchResolved = true;
+      const leavingPlayer: RoomPlayer = {
+        userId: socket.data.user.userId,
+        username: socket.data.user.username,
+        socketId: socket.id,
+        ready: false,
+        alive: false,
+        rating: 1000,
+      };
+      const rating = await applyRatingResult(winner, leavingPlayer);
+      io.to(roomId).emit('game_over', {
+        winner: winner.userId,
+        winnerUsername: winner.username,
+        reason: 'opponent_disconnected',
+        ratingDelta: rating?.delta ?? null,
+      });
+      return;
+    }
     io.to(roomId).emit('game_over', { reason: 'opponent_disconnected' });
   }
+}
+
+async function finishRound(
+  io: AuthedIoServer,
+  room: GameRoom,
+  winner: RoomPlayer,
+  loser: RoomPlayer
+): Promise<void> {
+  if (room.mode === 'league' && room.series) {
+    room.series.wins[winner.userId] = (room.series.wins[winner.userId] ?? 0) + 1;
+    const winnerWins = room.series.wins[winner.userId];
+    const targetWins = expectedRoundsTarget(room);
+
+    io.to(room.id).emit('series_update', {
+      mode: 'league',
+      bestOf: expectedBestOf(room),
+      targetWins,
+      wins: room.series.wins,
+      roundWinner: winner.userId,
+    });
+
+    if (winnerWins < targetWins) {
+      room.status = 'waiting';
+      room.players.forEach((p) => {
+        p.alive = true;
+        p.ready = true;
+      });
+      io.to(room.id).emit('round_over', {
+        roundWinner: winner.userId,
+        bestOf: expectedBestOf(room),
+        targetWins,
+        wins: room.series.wins,
+      });
+      io.to(room.id).emit('room_update', sanitizeRoom(room));
+      startCountdown(io, room);
+      return;
+    }
+  }
+
+  room.status = 'finished';
+  if (!room.matchResolved) {
+    room.matchResolved = true;
+    const rating = await applyRatingResult(winner, loser);
+    io.to(room.id).emit('game_over', {
+      winner: winner.userId,
+      winnerUsername: winner.username,
+      players: room.players.map((p) => ({ userId: p.userId, username: p.username, alive: p.alive })),
+      mode: room.mode,
+      bestOf: expectedBestOf(room),
+      wins: room.series?.wins ?? null,
+      ratingDelta: rating?.delta ?? null,
+    });
+    return;
+  }
+
+  io.to(room.id).emit('game_over', {
+    winner: winner.userId,
+    winnerUsername: winner.username,
+    mode: room.mode,
+  });
 }
 
 function startCountdown(io: AuthedIoServer, room: GameRoom): void {
@@ -313,6 +481,13 @@ function sanitizeRoom(room: GameRoom) {
     mode: room.mode,
     status: room.status,
     roomCode: room.roomCode,
+    series: room.series
+      ? {
+          bestOf: room.series.bestOf,
+          targetWins: room.series.targetWins,
+          wins: room.series.wins,
+        }
+      : undefined,
     players: room.players.map((p) => ({
       userId: p.userId,
       username: p.username,

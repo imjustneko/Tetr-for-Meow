@@ -15,6 +15,12 @@ export interface JwtPayload {
     roomCode?: string;
     players: RoomPlayer[];
     matchId?: string;
+  series?: {
+    bestOf: number;
+    targetWins: number;
+    wins: Record<string, number>;
+  };
+  matchResolved?: boolean;
   }
   
   export interface RoomPlayer {

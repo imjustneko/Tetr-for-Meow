@@ -19,7 +19,7 @@ import { BOARD_HEIGHT } from '@/lib/game/constants';
 import { usePlayfieldCellSize } from '@/hooks/usePlayfieldCellSize';
 import { GamePlayfield } from '@/components/game/GamePlayfield';
 
-export type VersusMode = 'ranked' | 'custom';
+export type VersusMode = 'ranked' | 'custom' | 'league';
 export type VersusStart = 'queue' | 'create' | 'join';
 
 export type SanitizedRoom = {
@@ -27,6 +27,11 @@ export type SanitizedRoom = {
   mode: string;
   status: string;
   roomCode?: string;
+  series?: {
+    bestOf: number;
+    targetWins: number;
+    wins: Record<string, number>;
+  };
   players: { userId: string; username: string; ready: boolean; alive: boolean; rating: number }[];
 };
 
@@ -58,6 +63,7 @@ export function VersusClient({ mode, startWith, joinCode, currentUserId }: Props
   const [banner, setBanner] = useState<string | null>(null);
   const [roomCodeShown, setRoomCodeShown] = useState<string | null>(null);
   const [winnerId, setWinnerId] = useState<string | null>(null);
+  const [seriesBanner, setSeriesBanner] = useState<string | null>(null);
   const topOutSent = useRef(false);
   const lastBoardEmit = useRef(0);
   const joinedOnce = useRef(false);
@@ -102,6 +108,8 @@ export function VersusClient({ mode, startWith, joinCode, currentUserId }: Props
   const engineRefHook = engineRef;
   const userIdRef = useRef(currentUserId);
   userIdRef.current = currentUserId;
+  const roomRef = useRef(room);
+  roomRef.current = room;
 
   useEffect(() => {
     if (phase === 'playing') playfieldRef.current?.focus({ preventScroll: true });
@@ -131,7 +139,7 @@ export function VersusClient({ mode, startWith, joinCode, currentUserId }: Props
       joinedOnce.current = true;
       setPhase('connecting');
       if (sw === 'queue') {
-        socket.emit('join_queue');
+        socket.emit('join_queue', { mode: propsRef.current.mode === 'league' ? 'league' : 'versus' });
         setPhase('queued');
       } else if (sw === 'create') {
         socket.emit('create_room', { mode: 'versus' });
@@ -169,6 +177,7 @@ export function VersusClient({ mode, startWith, joinCode, currentUserId }: Props
 
     const onGameStart = () => {
       setCount(null);
+      setSeriesBanner(null);
       setPhase('playing');
       setOpponentBoard(null);
       topOutSent.current = false;
@@ -188,6 +197,7 @@ export function VersusClient({ mode, startWith, joinCode, currentUserId }: Props
       winner?: string | null;
       winnerUsername?: string | null;
       reason?: string;
+      ratingDelta?: number | null;
     }) => {
       engineRefHook.current?.stop();
       setPhase('ended');
@@ -196,10 +206,44 @@ export function VersusClient({ mode, startWith, joinCode, currentUserId }: Props
       } else if (p.winner) {
         setWinnerId(p.winner);
         const uid = userIdRef.current;
-        setBanner(p.winner === uid ? 'You win!' : `Winner: ${p.winnerUsername ?? 'Opponent'}`);
+        const base = p.winner === uid ? 'You win!' : `Winner: ${p.winnerUsername ?? 'Opponent'}`;
+        const elo = typeof p.ratingDelta === 'number' ? ` (ELO ${p.winner === uid ? '+' : '-'}${p.ratingDelta})` : '';
+        setBanner(`${base}${elo}`);
       } else {
         setBanner('Match ended');
       }
+    };
+
+    const onSeriesUpdate = (p: {
+      mode?: string;
+      bestOf?: number;
+      targetWins?: number;
+      wins?: Record<string, number>;
+      roundWinner?: string;
+    }) => {
+      if (p.mode !== 'league' || !p.wins) return;
+      const meId = userIdRef.current ?? '';
+      const myWins = p.wins[meId] ?? 0;
+      const oppId = roomRef.current?.players.find((x) => x.userId !== meId)?.userId ?? '';
+      const oppWins = p.wins[oppId] ?? 0;
+      const result = p.roundWinner === meId ? 'You won the round' : 'Opponent won the round';
+      setSeriesBanner(`${result} · BO${p.bestOf ?? 3} (${myWins}-${oppWins})`);
+    };
+
+    const onRoundOver = (p: {
+      roundWinner?: string;
+      bestOf?: number;
+      wins?: Record<string, number>;
+    }) => {
+      engineRefHook.current?.stop();
+      setPhase('room');
+      if (!p?.wins) return;
+      const meId = userIdRef.current ?? '';
+      const myWins = p.wins[meId] ?? 0;
+      const oppId = roomRef.current?.players.find((x) => x.userId !== meId)?.userId ?? '';
+      const oppWins = p.wins[oppId] ?? 0;
+      const result = p.roundWinner === meId ? 'You won the round' : 'Opponent won the round';
+      setSeriesBanner(`${result} · BO${p.bestOf ?? 3} (${myWins}-${oppWins})`);
     };
 
     socket.on('connect', onConnect);
@@ -212,6 +256,8 @@ export function VersusClient({ mode, startWith, joinCode, currentUserId }: Props
     socket.on('garbage_incoming', onGarbage);
     socket.on('opponent_board', onOppBoard);
     socket.on('game_over', onGameOver);
+    socket.on('series_update', onSeriesUpdate);
+    socket.on('round_over', onRoundOver);
 
     if (socket.connected) {
       emitJoinIntent();
@@ -231,6 +277,8 @@ export function VersusClient({ mode, startWith, joinCode, currentUserId }: Props
       socket.off('garbage_incoming', onGarbage);
       socket.off('opponent_board', onOppBoard);
       socket.off('game_over', onGameOver);
+      socket.off('series_update', onSeriesUpdate);
+      socket.off('round_over', onRoundOver);
       disconnectSocket();
     };
   }, []);
@@ -265,6 +313,11 @@ export function VersusClient({ mode, startWith, joinCode, currentUserId }: Props
       {banner && phase === 'ended' ? (
         <div className="mb-4 rounded border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-200">
           {banner}
+        </div>
+      ) : null}
+      {seriesBanner && phase !== 'ended' ? (
+        <div className="mb-4 rounded border border-cyan-500/40 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-200">
+          {seriesBanner}
         </div>
       ) : null}
       {banner && phase !== 'ended' && phase !== 'playing' ? (

@@ -34,6 +34,7 @@ export default function SettingsPage() {
   const router = useRouter();
   const [rebinding, setRebinding] = useState<keyof Keybinds | null>(null);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const keybinds = useSettingsStore((s) => s.keybinds);
   const das = useSettingsStore((s) => s.das);
@@ -83,12 +84,23 @@ export default function SettingsPage() {
         sfxVolume: s.sfxVolume,
         boardSkin: s.boardSkin,
       });
+      setSaveError(null);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
       console.error(e);
+      setSaveError('Save failed');
     }
   };
+
+  useEffect(() => {
+    if (isLoading || !isAuthenticated) return;
+    const timer = setTimeout(() => {
+      void handleSave();
+    }, 700);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keybinds, das, arr, softDropFactor, handling, musicVolume, sfxVolume]);
 
   if (isLoading) {
     return (
@@ -283,6 +295,7 @@ export default function SettingsPage() {
             Save settings
           </Button>
           {saved ? <span className="text-sm text-emerald-400">Saved</span> : null}
+          {saveError ? <span className="text-sm text-red-400">{saveError}</span> : null}
         </div>
 
         <p className="mt-12 border-t border-white/5 pt-6 text-center text-[0.65rem] font-medium uppercase tracking-[0.25em] text-zinc-600">
