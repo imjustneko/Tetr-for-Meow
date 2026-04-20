@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { GameEngine } from '@/lib/game/engine';
-import type { GameState, GameMode, ClearResult } from '@/lib/game/types';
+import type { GameState, GameMode, PieceType } from '@/lib/game/types';
 import { useSettingsStore } from '@/store/settingsStore';
 import { createIrsInputRef, useGameInput, type IrsInputRef } from './useGameInput';
 
@@ -10,6 +10,8 @@ export type GameEngineCallbacks = {
   onGarbageSend?: (lines: number) => void;
   /** Called after every engine state tick (throttle board sync in your handler) */
   onStateTick?: (state: GameState) => void;
+  /** Optional fixed sequence for practice/training modes. */
+  practiceSequence?: PieceType[];
 };
 
 export function useGameEngine(mode: GameMode, callbacks?: GameEngineCallbacks) {
@@ -26,7 +28,9 @@ export function useGameEngine(mode: GameMode, callbacks?: GameEngineCallbacks) {
   const targetLines = mode.targetLines;
   const timeLimit = mode.timeLimit;
   const cbRef = useRef(callbacks);
-  cbRef.current = callbacks;
+  useEffect(() => {
+    cbRef.current = callbacks;
+  }, [callbacks]);
 
   const startGame = useCallback(() => {
     if (engineRef.current) {
@@ -35,6 +39,9 @@ export function useGameEngine(mode: GameMode, callbacks?: GameEngineCallbacks) {
 
     const modeConfig: GameMode = { type: modeType, targetLines, timeLimit };
     const engine = new GameEngine(modeConfig);
+    if (modeType === 'practice' && cbRef.current?.practiceSequence?.length) {
+      engine.setPracticeSequence(cbRef.current.practiceSequence, true);
+    }
     engineRef.current = engine;
 
     engine.onPieceSpawn = () => {
@@ -59,7 +66,7 @@ export function useGameEngine(mode: GameMode, callbacks?: GameEngineCallbacks) {
       setGameState({ ...state });
       cbRef.current?.onStateTick?.(state);
     };
-    engine.onClear = (_result: ClearResult) => {};
+    engine.onClear = () => {};
     engine.onGarbageSend = (lines) => {
       cbRef.current?.onGarbageSend?.(lines);
     };

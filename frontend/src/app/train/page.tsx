@@ -14,84 +14,170 @@ import { HoldEscOverlay } from '@/components/game/HoldEscOverlay';
 import { HoldBox } from '@/components/game/HoldBox';
 import { NextQueue } from '@/components/game/NextQueue';
 import { GameHUD } from '@/components/game/GameHUD';
-import { BOARD_HEIGHT } from '@/lib/game/constants';
+import { BOARD_HEIGHT, HIDDEN_ROWS } from '@/lib/game/constants';
 import { GarbageMeter } from '@/components/game/GarbageMeter';
-import type { GameState } from '@/lib/game/types';
+import type { PieceType } from '@/lib/game/types';
 
 type Drill = {
   id: string;
   title: string;
   description: string;
-  neededPieces: string[];
-  goalLabel: string;
-  hologramCells: Array<{ x: number; y: number; color?: string }>;
-  successCheck: (state: GameState) => boolean;
-  tip: string;
+  steps: Array<{
+    piece: PieceType;
+    instruction: string;
+    hologramCells: Array<{ x: number; y: number; color?: string }>;
+  }>;
 };
 
 const DRILLS: Drill[] = [
   {
     id: 'tspin-double',
     title: 'T-Spin Double',
-    description: 'T piece-ээ хана түшүүлж 2 мөр цэвэрлэхийг зорь.',
-    neededPieces: ['T', 'J', 'L'],
-    goalLabel: 'Do a T-Spin Double once',
-    hologramCells: [
-      { x: 4, y: 17 },
-      { x: 3, y: 18 },
-      { x: 4, y: 18 },
-      { x: 5, y: 18 },
+    description: 'Build and place by guided targets to learn T-Spin setup flow.',
+    steps: [
+      {
+        piece: 'J',
+        instruction: 'Step 1: Place J in the left cavity target.',
+        hologramCells: [
+          { x: 2, y: 18 },
+          { x: 2, y: 19 },
+          { x: 3, y: 19 },
+          { x: 4, y: 19 },
+        ],
+      },
+      {
+        piece: 'L',
+        instruction: 'Step 2: Place L on the right side to shape the slot.',
+        hologramCells: [
+          { x: 6, y: 18 },
+          { x: 4, y: 19 },
+          { x: 5, y: 19 },
+          { x: 6, y: 19 },
+        ],
+      },
+      {
+        piece: 'T',
+        instruction: 'Step 3: Drop T into the center target and finish.',
+        hologramCells: [
+          { x: 4, y: 18 },
+          { x: 3, y: 19 },
+          { x: 4, y: 19 },
+          { x: 5, y: 19 },
+        ],
+      },
     ],
-    successCheck: (state) => state.lastClear?.clearType === 'tSpinDouble',
-    tip: 'Ханы ойролцоо CW/CCW эргэлтээр kick ашиглаад T-г шургуул.',
   },
   {
     id: 'combo-chain',
     title: 'Combo Chain',
-    description: 'Тасралтгүй мөр цэвэрлээд combo-г өсгө.',
-    neededPieces: ['I', 'T', 'L', 'S'],
-    goalLabel: 'Reach 4x combo',
-    hologramCells: [
-      { x: 7, y: 16, color: 'rgba(255, 220, 0, 0.22)' },
-      { x: 7, y: 17, color: 'rgba(255, 220, 0, 0.22)' },
-      { x: 7, y: 18, color: 'rgba(255, 220, 0, 0.22)' },
-      { x: 7, y: 19, color: 'rgba(255, 220, 0, 0.22)' },
+    description: 'Practice clean combo stacking with strict piece-by-piece guidance.',
+    steps: [
+      {
+        piece: 'J',
+        instruction: 'Step 1: Place J on the lower-left target.',
+        hologramCells: [
+          { x: 1, y: 18, color: 'rgba(255, 220, 0, 0.22)' },
+          { x: 1, y: 19, color: 'rgba(255, 220, 0, 0.22)' },
+          { x: 2, y: 19, color: 'rgba(255, 220, 0, 0.22)' },
+          { x: 3, y: 19, color: 'rgba(255, 220, 0, 0.22)' },
+        ],
+      },
+      {
+        piece: 'L',
+        instruction: 'Step 2: Place L opposite to keep the channel open.',
+        hologramCells: [
+          { x: 6, y: 18, color: 'rgba(255, 220, 0, 0.22)' },
+          { x: 4, y: 19, color: 'rgba(255, 220, 0, 0.22)' },
+          { x: 5, y: 19, color: 'rgba(255, 220, 0, 0.22)' },
+          { x: 6, y: 19, color: 'rgba(255, 220, 0, 0.22)' },
+        ],
+      },
+      {
+        piece: 'I',
+        instruction: 'Step 3: Place I vertical in the right well target.',
+        hologramCells: [
+          { x: 8, y: 16, color: 'rgba(255, 220, 0, 0.22)' },
+          { x: 8, y: 17, color: 'rgba(255, 220, 0, 0.22)' },
+          { x: 8, y: 18, color: 'rgba(255, 220, 0, 0.22)' },
+          { x: 8, y: 19, color: 'rgba(255, 220, 0, 0.22)' },
+        ],
+      },
     ],
-    successCheck: (state) => state.combo >= 4,
-    tip: 'Нэг талдаа суваг үлдээгээд мөр бүр дээр clean хийж combo-г таслахгүй үргэлжлүүл.',
   },
   {
     id: 'b2b-stack',
     title: 'B2B Pressure',
-    description: 'Tetris эсвэл T-Spin-уудаа дараалуулж back-to-back асаа.',
-    neededPieces: ['I', 'T'],
-    goalLabel: 'Trigger back-to-back',
-    hologramCells: [
-      { x: 8, y: 16, color: 'rgba(130, 200, 255, 0.22)' },
-      { x: 8, y: 17, color: 'rgba(130, 200, 255, 0.22)' },
-      { x: 8, y: 18, color: 'rgba(130, 200, 255, 0.22)' },
-      { x: 8, y: 19, color: 'rgba(130, 200, 255, 0.22)' },
+    description: 'Build a simple right-side well and practice B2B structure.',
+    steps: [
+      {
+        piece: 'J',
+        instruction: 'Step 1: Place J on the left to raise your stack.',
+        hologramCells: [
+          { x: 1, y: 18, color: 'rgba(130, 200, 255, 0.22)' },
+          { x: 1, y: 19, color: 'rgba(130, 200, 255, 0.22)' },
+          { x: 2, y: 19, color: 'rgba(130, 200, 255, 0.22)' },
+          { x: 3, y: 19, color: 'rgba(130, 200, 255, 0.22)' },
+        ],
+      },
+      {
+        piece: 'I',
+        instruction: 'Step 2: Place I vertically in the right well.',
+        hologramCells: [
+          { x: 8, y: 16, color: 'rgba(130, 200, 255, 0.22)' },
+          { x: 8, y: 17, color: 'rgba(130, 200, 255, 0.22)' },
+          { x: 8, y: 18, color: 'rgba(130, 200, 255, 0.22)' },
+          { x: 8, y: 19, color: 'rgba(130, 200, 255, 0.22)' },
+        ],
+      },
     ],
-    successCheck: (state) => Boolean(state.lastClear?.isBackToBack),
-    tip: 'I-piece-ийн well-ээ хамгаалаад B2B cut бүү хий.',
   },
 ];
+
+const PIECE_TO_CELL_VALUE: Record<PieceType, number> = {
+  I: 1,
+  O: 2,
+  T: 3,
+  S: 4,
+  Z: 5,
+  J: 6,
+  L: 7,
+};
 
 export default function TrainPage() {
   const { isAuthenticated, isLoading } = useAuthStore();
   const router = useRouter();
   const playfieldRef = useRef<HTMLDivElement>(null);
   const [selectedDrillId, setSelectedDrillId] = useState(DRILLS[0].id);
-  const [isSuccess, setIsSuccess] = useState(false);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [stepFeedback, setStepFeedback] = useState('');
   const [showXray, setShowXray] = useState(true);
   const selectedDrill = DRILLS.find((d) => d.id === selectedDrillId) ?? DRILLS[0];
+  const currentStep = selectedDrill.steps[currentStepIndex] ?? selectedDrill.steps[selectedDrill.steps.length - 1];
   const mode = useMemo(() => ({ type: 'practice' as const }), []);
   const cellSize = usePlayfieldCellSize();
+  const previousPlacedRef = useRef(0);
 
-  const { gameState, isActive, isFinished, finalState, startGame, restartGame } = useGameEngine(mode, {
+  const { gameState, isActive, isFinished, finalState, startGame, restartGame, engineRef } = useGameEngine(mode, {
+    practiceSequence: [currentStep.piece],
     onStateTick: (state) => {
-      if (!isSuccess && selectedDrill.successCheck(state)) {
-        setIsSuccess(true);
+      if (state.piecesPlaced <= previousPlacedRef.current || isCompleted) return;
+      previousPlacedRef.current = state.piecesPlaced;
+      const targetValue = PIECE_TO_CELL_VALUE[currentStep.piece];
+      const placedCorrectly = currentStep.hologramCells.every(
+        (cell) => (state.board[cell.y + HIDDEN_ROWS]?.[cell.x] ?? 0) === targetValue
+      );
+      if (placedCorrectly) {
+        const nextStep = currentStepIndex + 1;
+        if (nextStep >= selectedDrill.steps.length) {
+          setIsCompleted(true);
+          setStepFeedback('Great job! Drill completed correctly.');
+          return;
+        }
+        setCurrentStepIndex(nextStep);
+        setStepFeedback(`Correct! Moving to step ${nextStep + 1}.`);
+      } else {
+        setStepFeedback('Not quite right. Keep the same piece and place it on the highlighted hologram cells.');
       }
     },
   });
@@ -110,13 +196,23 @@ export default function TrainPage() {
     }
   }, [isActive]);
 
+  useEffect(() => {
+    engineRef.current?.setPracticeSequence([currentStep.piece], true);
+  }, [currentStep.piece, engineRef]);
+
   function startDrill() {
-    setIsSuccess(false);
+    setCurrentStepIndex(0);
+    setIsCompleted(false);
+    setStepFeedback('');
+    previousPlacedRef.current = 0;
     startGame();
   }
 
   function retryDrill() {
-    setIsSuccess(false);
+    setCurrentStepIndex(0);
+    setIsCompleted(false);
+    setStepFeedback('');
+    previousPlacedRef.current = 0;
     restartGame();
   }
 
@@ -147,17 +243,14 @@ export default function TrainPage() {
               {selectedDrill.title}
             </h1>
             <p className="mt-2 text-sm text-zinc-300">{selectedDrill.description}</p>
-            <p className="mt-2 text-xs uppercase tracking-wider text-cyan-300">Goal: {selectedDrill.goalLabel}</p>
+            <p className="mt-2 text-xs uppercase tracking-wider text-cyan-300">
+              Step {Math.min(currentStepIndex + 1, selectedDrill.steps.length)} / {selectedDrill.steps.length}
+            </p>
             <p className="mt-2 text-xs text-zinc-400">
-              Needed pieces:{' '}
-              {selectedDrill.neededPieces.map((piece) => (
-                <span
-                  key={piece}
-                  className="mr-1 inline-flex rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 font-bold text-cyan-200"
-                >
-                  {piece}
-                </span>
-              ))}
+              Needed piece now:{' '}
+              <span className="mr-1 inline-flex rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 font-bold text-cyan-200">
+                {currentStep.piece}
+              </span>
             </p>
           </div>
           <div className="flex flex-wrap items-start gap-2 lg:justify-end">
@@ -183,7 +276,9 @@ export default function TrainPage() {
               type="button"
               onClick={() => {
                 setSelectedDrillId(drill.id);
-                setIsSuccess(false);
+                setCurrentStepIndex(0);
+                setIsCompleted(false);
+                setStepFeedback('');
               }}
               className={`rounded-sm border px-3 py-3 text-left transition-colors ${
                 selectedDrillId === drill.id
@@ -192,22 +287,21 @@ export default function TrainPage() {
               }`}
             >
               <p className="text-xs font-bold uppercase tracking-wide text-zinc-300">{drill.title}</p>
-              <p className="mt-1 text-xs text-zinc-500">{drill.goalLabel}</p>
+              <p className="mt-1 text-xs text-zinc-500">{drill.steps.length} guided steps</p>
             </button>
           ))}
         </div>
 
-        {isSuccess ? (
+        {isCompleted ? (
           <div className="mb-5 rounded-sm border border-emerald-400/40 bg-emerald-500/10 px-4 py-3">
-            <p className="text-sm font-bold uppercase tracking-wide text-emerald-300">Success unlocked</p>
-            <p className="text-xs text-emerald-100/90">
-              {selectedDrill.title} амжилттай. Одоо speed-ээ өсгөж дахин давтаад consistency авч болно.
-            </p>
+            <p className="text-sm font-bold uppercase tracking-wide text-emerald-300">Drill completed</p>
+            <p className="text-xs text-emerald-100/90">{stepFeedback || 'Great job! Drill completed correctly.'}</p>
           </div>
         ) : (
           <div className="mb-5 rounded-sm border border-white/10 bg-black/25 px-4 py-3">
             <p className="text-xs uppercase tracking-wide text-zinc-500">Hologram tip</p>
-            <p className="text-sm text-zinc-300">{selectedDrill.tip}</p>
+            <p className="text-sm text-zinc-300">{currentStep.instruction}</p>
+            {stepFeedback ? <p className="mt-2 text-xs text-cyan-300">{stepFeedback}</p> : null}
           </div>
         )}
 
@@ -225,7 +319,7 @@ export default function TrainPage() {
                     gameState={gameState}
                     cellSize={cellSize}
                     suppressGameOverOverlay={isFinished}
-                    guideCells={showXray ? selectedDrill.hologramCells : []}
+                    guideCells={showXray ? currentStep.hologramCells : []}
                   />
                   {isFinished && finalState ? (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/75 backdrop-blur-[2px]">

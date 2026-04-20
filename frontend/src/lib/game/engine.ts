@@ -29,6 +29,9 @@ export class GameEngine {
   private animFrameId = 0;
 
   private lastMoveWasRotation = false;
+  private practiceSequence: PieceType[] = [];
+  private practiceLoop = true;
+  private practiceIndex = 0;
 
   onStateChange: (state: GameState) => void = () => {};
   onClear: (result: ClearResult) => void = () => {};
@@ -87,6 +90,19 @@ export class GameEngine {
 
   getState(): GameState {
     return { ...this.state };
+  }
+
+  setPracticeSequence(sequence: PieceType[], loop = true): void {
+    this.practiceSequence = [...sequence];
+    this.practiceLoop = loop;
+    this.practiceIndex = 0;
+    if (this.mode.type === 'practice' && this.practiceSequence.length > 0) {
+      this.state.nextQueue = Array.from(
+        { length: NEXT_QUEUE_SIZE },
+        (_, idx) => this.practiceSequence[(this.practiceIndex + idx) % this.practiceSequence.length]
+      );
+      this.onStateChange({ ...this.state });
+    }
   }
 
   receiveGarbage(lines: number): void {
@@ -229,7 +245,19 @@ export class GameEngine {
 
   private spawnPiece(): void {
     const type = this.state.nextQueue.shift()!;
-    this.state.nextQueue.push(this.bag.next());
+    if (this.mode.type === 'practice' && this.practiceSequence.length > 0) {
+      const idx = this.practiceLoop
+        ? (this.practiceIndex + NEXT_QUEUE_SIZE - 1) % this.practiceSequence.length
+        : Math.min(this.practiceIndex + NEXT_QUEUE_SIZE - 1, this.practiceSequence.length - 1);
+      this.state.nextQueue.push(this.practiceSequence[idx]);
+      if (this.practiceLoop) {
+        this.practiceIndex = (this.practiceIndex + 1) % this.practiceSequence.length;
+      } else {
+        this.practiceIndex = Math.min(this.practiceIndex + 1, this.practiceSequence.length - 1);
+      }
+    } else {
+      this.state.nextQueue.push(this.bag.next());
+    }
     this.spawnSpecificPiece(type);
   }
 
