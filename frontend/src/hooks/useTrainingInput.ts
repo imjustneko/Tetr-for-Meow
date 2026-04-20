@@ -8,33 +8,7 @@ export function useTrainingInput(
 ) {
   const { keybinds, das, arr } = useSettingsStore();
   const heldKeys = useRef<Set<string>>(new Set());
-  const dasTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const arrIntervals = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
   const softDropInterval = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const clearKeyTimers = useCallback((code: string) => {
-    const dt = dasTimers.current.get(code);
-    if (dt) {
-      clearTimeout(dt);
-      dasTimers.current.delete(code);
-    }
-    const ai = arrIntervals.current.get(code);
-    if (ai) {
-      clearInterval(ai);
-      arrIntervals.current.delete(code);
-    }
-  }, []);
-
-  const clearAllTimers = useCallback(() => {
-    dasTimers.current.forEach((t) => clearTimeout(t));
-    arrIntervals.current.forEach((t) => clearInterval(t));
-    dasTimers.current.clear();
-    arrIntervals.current.clear();
-    if (softDropInterval.current) {
-      clearInterval(softDropInterval.current);
-      softDropInterval.current = null;
-    }
-  }, []);
 
   const clearHeldKeys = useCallback(() => {
     heldKeys.current.clear();
@@ -113,7 +87,6 @@ export function useTrainingInput(
 
     const onKeyUp = (e: KeyboardEvent) => {
       heldKeys.current.delete(e.code);
-      clearKeyTimers(e.code);
       const action = keyToAction[e.code];
       
       if (action === 'softDrop' && softDropInterval.current) {
@@ -158,7 +131,7 @@ export function useTrainingInput(
         }
       }
 
-      if (movementDasTimes.size > 0 || heldKeys.current.size > 0) {
+      if (movementDasTimes.size > 0) {
         requestAnimationFrame(processMovementFrame);
       }
     };
@@ -173,7 +146,10 @@ export function useTrainingInput(
 
     const onBlur = () => {
       heldKeys.current.clear();
-      clearAllTimers();
+      if (softDropInterval.current) {
+        clearInterval(softDropInterval.current);
+        softDropInterval.current = null;
+      }
       movementDasTimes.clear();
       movementDasFired.clear();
     };
@@ -188,10 +164,13 @@ export function useTrainingInput(
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
       if (movementRafId !== null) cancelAnimationFrame(movementRafId);
-      clearAllTimers();
+      if (softDropInterval.current) {
+        clearInterval(softDropInterval.current);
+        softDropInterval.current = null;
+      }
       clearHeldKeys();
       movementDasTimes.clear();
       movementDasFired.clear();
     };
-  }, [active, keybinds, das, arr, handleAction, clearKeyTimers, clearAllTimers, clearHeldKeys]);
+  }, [active, keybinds, das, arr, handleAction, clearHeldKeys]);
 }

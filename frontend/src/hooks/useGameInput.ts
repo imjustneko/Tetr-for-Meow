@@ -40,39 +40,12 @@ export function useGameInput(
 
   const hardHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heldKeys = useRef<Set<string>>(new Set());
-  const dasTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const arrIntervals = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
   const softDropInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const clearHardHold = useCallback(() => {
     if (hardHoldTimer.current) clearTimeout(hardHoldTimer.current);
     hardHoldTimer.current = null;
   }, []);
-
-  const clearKeyTimers = useCallback((code: string) => {
-    const dt = dasTimers.current.get(code);
-    if (dt) {
-      clearTimeout(dt);
-      dasTimers.current.delete(code);
-    }
-    const ai = arrIntervals.current.get(code);
-    if (ai) {
-      clearInterval(ai);
-      arrIntervals.current.delete(code);
-    }
-  }, []);
-
-  const clearAll = useCallback(() => {
-    dasTimers.current.forEach((t) => clearTimeout(t));
-    arrIntervals.current.forEach((t) => clearInterval(t));
-    dasTimers.current.clear();
-    arrIntervals.current.clear();
-    clearHardHold();
-    if (softDropInterval.current) {
-      clearInterval(softDropInterval.current);
-      softDropInterval.current = null;
-    }
-  }, [clearHardHold]);
 
   const clearHeldKeys = useCallback(() => {
     heldKeys.current.clear();
@@ -226,7 +199,6 @@ export function useGameInput(
       if (!action) return;
 
       heldKeys.current.delete(e.code);
-      clearKeyTimers(e.code);
 
       const r = ir();
       if (r) {
@@ -286,7 +258,7 @@ export function useGameInput(
         }
       }
 
-      if (movementDasTimes.size > 0 || heldKeys.current.size > 0) {
+      if (movementDasTimes.size > 0) {
         requestAnimationFrame(processMovementFrame);
       }
     };
@@ -303,7 +275,11 @@ export function useGameInput(
     window.addEventListener('keyup', onKeyUp, { capture: true });
     const onBlur = () => {
       clearHeldKeys();
-      clearAll();
+      clearHardHold();
+      if (softDropInterval.current) {
+        clearInterval(softDropInterval.current);
+        softDropInterval.current = null;
+      }
       movementDasTimes.clear();
       movementDasFired.clear();
     };
@@ -318,9 +294,13 @@ export function useGameInput(
       window.removeEventListener('blur', onBlur);
       if (movementRafId !== null) cancelAnimationFrame(movementRafId);
       clearHeldKeys();
-      clearAll();
+      clearHardHold();
+      if (softDropInterval.current) {
+        clearInterval(softDropInterval.current);
+        softDropInterval.current = null;
+      }
       movementDasTimes.clear();
       movementDasFired.clear();
     };
-  }, [active, keybinds, handleAction, clearAll, clearHardHold, clearHeldKeys, clearKeyTimers, irsInputRef, sounds]);
+  }, [active, keybinds, handleAction, clearHardHold, clearHeldKeys, irsInputRef, sounds]);
 }
