@@ -16,7 +16,9 @@ import { NextQueue } from '@/components/game/NextQueue';
 import { GameHUD } from '@/components/game/GameHUD';
 import { BOARD_HEIGHT, HIDDEN_ROWS } from '@/lib/game/constants';
 import { GarbageMeter } from '@/components/game/GarbageMeter';
-import type { PieceType } from '@/lib/game/types';
+import type { PieceType, Board } from '@/lib/game/types';
+import { getPieceMatrix } from '@/lib/game/tetrominos';
+import { PIECE_COLORS } from '@/lib/game/constants';
 
 type Drill = {
   id: string;
@@ -157,16 +159,18 @@ export default function TrainPage() {
   const mode = useMemo(() => ({ type: 'practice' as const }), []);
   const cellSize = usePlayfieldCellSize();
   const previousPlacedRef = useRef(0);
+  const previousBoardRef = useRef<Board | null>(null);
 
   const { gameState, isActive, isFinished, finalState, startGame, restartGame, engineRef } = useGameEngine(mode, {
     practiceSequence: [currentStep.piece],
     onStateTick: (state) => {
       if (state.piecesPlaced <= previousPlacedRef.current || isCompleted) return;
       previousPlacedRef.current = state.piecesPlaced;
+      const boardBefore = previousBoardRef.current;
       const targetValue = PIECE_TO_CELL_VALUE[currentStep.piece];
-      const placedCorrectly = currentStep.hologramCells.every(
-        (cell) => (state.board[cell.y + HIDDEN_ROWS]?.[cell.x] ?? 0) === targetValue
-      );
+      const placedCells = extractPlacedCells(boardBefore, state.board, targetValue);
+      const targetCells = currentStep.hologramCells.map((cell) => ({ x: cell.x, y: cell.y }));
+      const placedCorrectly = areSameCellSet(placedCells, targetCells);
       if (placedCorrectly) {
         const nextStep = currentStepIndex + 1;
         if (nextStep >= selectedDrill.steps.length) {
@@ -197,6 +201,12 @@ export default function TrainPage() {
   }, [isActive]);
 
   useEffect(() => {
+    if (gameState) {
+      previousBoardRef.current = gameState.board.map((row) => [...row]);
+    }
+  }, [gameState]);
+
+  useEffect(() => {
     engineRef.current?.setPracticeSequence([currentStep.piece], true);
   }, [currentStep.piece, engineRef]);
 
@@ -205,6 +215,7 @@ export default function TrainPage() {
     setIsCompleted(false);
     setStepFeedback('');
     previousPlacedRef.current = 0;
+    previousBoardRef.current = null;
     startGame();
   }
 
@@ -213,6 +224,7 @@ export default function TrainPage() {
     setIsCompleted(false);
     setStepFeedback('');
     previousPlacedRef.current = 0;
+    previousBoardRef.current = null;
     restartGame();
   }
 
@@ -235,8 +247,8 @@ export default function TrainPage() {
       />
       <Navbar />
 
-      <div className="relative z-10 mx-auto max-w-6xl px-4 pb-16 pt-20 sm:pt-24">
-        <div className="mb-6 grid gap-3 rounded-sm border border-white/10 bg-black/35 p-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+      <div className="relative z-10 mx-auto flex min-h-[100dvh] w-full max-w-6xl flex-col px-2 pb-4 pt-14 sm:px-3 sm:pt-16">
+        <div className="mb-3 grid gap-2 rounded-sm border border-white/10 bg-black/35 p-3 lg:grid-cols-[minmax(0,1fr)_auto]">
           <div>
             <p className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-zinc-500">Training Lab</p>
             <h1 className="mt-2 text-2xl font-black uppercase tracking-tight text-cyan-300 sm:text-3xl">
@@ -269,7 +281,7 @@ export default function TrainPage() {
           </div>
         </div>
 
-        <div className="mb-5 grid gap-2 sm:grid-cols-3">
+        <div className="mb-3 grid gap-2 sm:grid-cols-3">
           {DRILLS.map((drill) => (
             <button
               key={drill.id}
@@ -293,12 +305,12 @@ export default function TrainPage() {
         </div>
 
         {isCompleted ? (
-          <div className="mb-5 rounded-sm border border-emerald-400/40 bg-emerald-500/10 px-4 py-3">
+          <div className="mb-3 rounded-sm border border-emerald-400/40 bg-emerald-500/10 px-3 py-2">
             <p className="text-sm font-bold uppercase tracking-wide text-emerald-300">Drill completed</p>
             <p className="text-xs text-emerald-100/90">{stepFeedback || 'Great job! Drill completed correctly.'}</p>
           </div>
         ) : (
-          <div className="mb-5 rounded-sm border border-white/10 bg-black/25 px-4 py-3">
+          <div className="mb-3 rounded-sm border border-white/10 bg-black/25 px-3 py-2">
             <p className="text-xs uppercase tracking-wide text-zinc-500">Hologram tip</p>
             <p className="text-sm text-zinc-300">{currentStep.instruction}</p>
             {stepFeedback ? <p className="mt-2 text-xs text-cyan-300">{stepFeedback}</p> : null}
@@ -306,13 +318,14 @@ export default function TrainPage() {
         )}
 
         {gameState ? (
-          <GamePlayfield playfieldRef={playfieldRef}>
-            <div className="grid w-full grid-cols-1 items-start justify-items-center gap-4 lg:grid-cols-[auto_minmax(0,auto)_auto] lg:gap-5">
-              <div className="flex w-full max-w-[20rem] flex-row justify-center gap-4 lg:max-w-none lg:flex-col lg:justify-start">
+          <GamePlayfield playfieldRef={playfieldRef} className="flex-1">
+            <div className="grid w-full grid-cols-1 items-start justify-items-center gap-2 lg:grid-cols-[auto_minmax(0,auto)_auto] lg:gap-3">
+              <div className="flex w-full max-w-[20rem] flex-row justify-center gap-3 lg:max-w-none lg:flex-col lg:justify-start">
+                <NeededPieceBox piece={currentStep.piece} />
                 <HoldBox heldPiece={gameState.heldPiece} canHold={gameState.canHold} />
               </div>
 
-              <div className="flex w-full max-w-[min(100vw-1rem,28rem)] flex-col items-center gap-3 sm:max-w-none">
+              <div className="flex w-full max-w-[min(100vw-0.75rem,28rem)] flex-col items-center gap-2 sm:max-w-none">
                 <div className="relative flex w-max max-w-full shrink-0 flex-row items-stretch overflow-hidden rounded-sm shadow-lg shadow-black/30">
                   <GarbageMeter lines={gameState.garbageQueue} heightPx={BOARD_HEIGHT * cellSize} />
                   <GameCanvas
@@ -338,15 +351,15 @@ export default function TrainPage() {
                 </div>
               </div>
 
-              <div className="flex w-full max-w-[20rem] flex-col gap-3 sm:max-w-none lg:max-w-[min(100%,10rem)]">
+              <div className="flex w-full max-w-[20rem] flex-col gap-2 sm:max-w-none lg:max-w-[min(100%,10rem)]">
                 <NextQueue queue={gameState.nextQueue} />
                 <GameHUD gameState={gameState} mode="solo" />
               </div>
             </div>
           </GamePlayfield>
         ) : (
-          <div className="rounded-sm border border-white/10 bg-black/30 px-6 py-10 text-center">
-            <p className="text-sm text-zinc-300">Drill эхлүүлэхийн тулд Start drill дарна уу.</p>
+          <div className="rounded-sm border border-white/10 bg-black/30 px-6 py-8 text-center">
+            <p className="text-sm text-zinc-300">Press Start drill to begin this lesson.</p>
           </div>
         )}
 
@@ -355,6 +368,88 @@ export default function TrainPage() {
         ) : null}
       </div>
       <HoldEscOverlay progress={escProgress} />
+    </div>
+  );
+}
+
+function extractPlacedCells(boardBefore: Board | null, boardAfter: Board, targetValue: number): Array<{ x: number; y: number }> {
+  const cells: Array<{ x: number; y: number }> = [];
+  if (!boardBefore) return cells;
+  for (let y = HIDDEN_ROWS; y < boardAfter.length; y++) {
+    const rowBefore = boardBefore[y] ?? [];
+    const rowAfter = boardAfter[y] ?? [];
+    for (let x = 0; x < rowAfter.length; x++) {
+      const before = rowBefore[x] ?? 0;
+      const after = rowAfter[x] ?? 0;
+      if (before === 0 && after === targetValue) {
+        cells.push({ x, y: y - HIDDEN_ROWS });
+      }
+    }
+  }
+  return cells;
+}
+
+function areSameCellSet(a: Array<{ x: number; y: number }>, b: Array<{ x: number; y: number }>): boolean {
+  if (a.length !== b.length) return false;
+  const setA = new Set(a.map((cell) => `${cell.x},${cell.y}`));
+  for (const cell of b) {
+    if (!setA.has(`${cell.x},${cell.y}`)) return false;
+  }
+  return true;
+}
+
+function NeededPieceBox({ piece }: { piece: PieceType }) {
+  const matrix = getPieceMatrix(piece, 0);
+  const color = PIECE_COLORS[piece];
+  const cellSize = 16;
+
+  let minRow = 3;
+  let maxRow = 0;
+  let minCol = 3;
+  let maxCol = 0;
+  for (let r = 0; r < 4; r++) {
+    for (let c = 0; c < 4; c++) {
+      if (matrix[r][c] !== 0) {
+        minRow = Math.min(minRow, r);
+        maxRow = Math.max(maxRow, r);
+        minCol = Math.min(minCol, c);
+        maxCol = Math.max(maxCol, c);
+      }
+    }
+  }
+
+  const rows = maxRow - minRow + 1;
+  const cols = maxCol - minCol + 1;
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-[0.65rem] font-bold uppercase tracking-[0.25em] text-cyan-300">Needed</p>
+      <div className="flex h-[52px] w-[80px] items-center justify-center border border-cyan-500/40 bg-cyan-500/10">
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateRows: `repeat(${rows}, ${cellSize}px)`,
+            gridTemplateColumns: `repeat(${cols}, ${cellSize}px)`,
+            gap: 1,
+          }}
+        >
+          {Array.from({ length: rows * cols }, (_, idx) => {
+            const r = Math.floor(idx / cols);
+            const c = idx % cols;
+            const filled = matrix[r + minRow][c + minCol] !== 0;
+            return (
+              <div
+                key={`${r}-${c}`}
+                style={{
+                  width: cellSize,
+                  height: cellSize,
+                  backgroundColor: filled ? color : 'transparent',
+                  borderRadius: 1,
+                }}
+              />
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

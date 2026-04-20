@@ -11,10 +11,13 @@ export function usePlayfieldCellSize(): number {
   useEffect(() => {
     const compute = () => {
       const w = typeof window !== 'undefined' ? window.innerWidth : 1024;
-      // Leave room for hold (~88px) + meter (~8px) + padding + next column (~100px)
-      const reserved = 220;
-      const maxBoard = Math.min(360, Math.max(200, w - reserved));
-      const next = Math.max(12, Math.min(30, Math.floor(maxBoard / 10)));
+      const h = typeof window !== 'undefined' ? window.innerHeight : 768;
+      // Width budget: hold + meter + next queue + gaps.
+      const maxByWidth = Math.min(360, Math.max(160, w - 220));
+      // Height budget: navbar + drill panels + spacing (so 20 rows still fit at 1366x768).
+      const maxByHeight = Math.max(140, h - 300);
+      const maxBoard = Math.min(maxByWidth, maxByHeight);
+      const next = Math.max(10, Math.min(30, Math.floor(maxBoard / 10)));
       setCell(next);
     };
     compute();
