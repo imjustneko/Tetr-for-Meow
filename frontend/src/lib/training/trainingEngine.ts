@@ -1,9 +1,26 @@
-import { GameEngine } from '@/lib/game/engine';
-import type { GameState, ClearResult, ActivePiece, CellValue, PieceType } from '@/lib/game/types';
-import { HIDDEN_ROWS } from '@/lib/game/constants';
+import type { GameState, ClearResult, ActivePiece, Board, PieceType } from '@/lib/game/types';
 import type { Lesson, LessonStep } from './lessons';
+import { BOARD_HEIGHT, GRAVITY_TABLE, LOCK_DELAY, MAX_LOCK_RESETS } from '@/lib/game/constants';
+import { getSpawnPosition } from '@/lib/game/tetrominos';
+import {
+  isValidPosition,
+  lockPiece,
+  clearLines,
+  tryRotate,
+  detectTSpin,
+  isPerfectClear,
+  getHardDropDistance,
+} from '@/lib/game/board';
+import type { ClearType } from '@/lib/game/types';
 
 export type StepResult = 'success' | 'fail' | 'pending';
+
+export interface HologramData {
+  x: number;
+  y: number;
+  rotation: 0 | 1 | 2 | 3;
+  piece: PieceType;
+}
 
 export interface TrainingState {
   gameState: GameState;
@@ -12,213 +29,487 @@ export interface TrainingState {
   stepResult: StepResult;
   feedbackMessage: string;
   lessonComplete: boolean;
-  showHologram: boolean;
+  hologram: HologramData | null;
 }
 
 export class TrainingEngine {
-  private readonly lesson: Lesson;
+  private lesson: Lesson;
   private currentStepIndex = 0;
-  private innerEngine: GameEngine;
-  private accumulatedClears = 0;
-  private lastTrainingState: TrainingState | null = null;
+  private stepResult: StepResult = 'pending';
+  private feedbackMessage = '';
+  private lessonComplete = false;
+
+  private board: Board;
+  private activePiece: ActivePiece | null = null;
+  private heldPiece: PieceType | null;
+  private canHold = true;
+  private score = 0;
+  private lines = 0;
+  private combo = -1;
+  private isBackToBack = false;
+  private piecesPlaced = 0;
+  private startTime = Date.now();
+  private linesCleared = 0;
+
+  private pieceQueue: PieceType[];
+  private queuePosition = 0;
+
+  private animFrame = 0;
+  private lastTick = 0;
+  private gravityAcc = 0;
+  private lockTimer = 0;
+  private lockResets = 0;
+  private isOnGround = false;
+  private lastMoveWasRotation = false;
+  private isPaused = false;
+  private isGameOver = false;
+
+  private showHologramActive = true;
 
   onStateChange: (state: TrainingState) => void = () => {};
-  onStepComplete: (stepIndex: number, result: StepResult) => void = () => {};
+  onStepComplete: (index: number, result: StepResult) => void = () => {};
 
   constructor(lesson: Lesson) {
     this.lesson = lesson;
-    this.innerEngine = this.buildEngine();
+    this.board = lesson.initialBoard.map((row) => [...row]) as Board;
+    this.heldPiece = lesson.initialHold;
+    this.pieceQueue = this.buildQueue(lesson.initialQueue);
+    this.queuePosition = 0;
   }
 
-  private toInternalBoard(visibleBoard: CellValue[][]): CellValue[][] {
-    const hidden = Array.from({ length: HIDDEN_ROWS }, () => Array(10).fill(0) as CellValue[]);
-    const visible = visibleBoard.map((row) => [...row]);
-    return [...hidden, ...visible];
-  }
-
-  private buildEngine(): GameEngine {
-    const engine = new GameEngine({ type: 'practice' });
-    engine.setPracticeSetup({
-      board: this.toInternalBoard(this.lesson.initialBoard),
-      nextQueue: this.lesson.initialQueue,
-      heldPiece: this.lesson.initialHold,
-      canHold: true,
-    });
-
-    engine.setPracticeSequence(this.getStepPieceSequence(), true);
-
-    engine.onStateChange = (gs) => {
-      const prev = this.lastTrainingState;
-      const feedback = prev?.feedbackMessage ?? '';
-      const result = prev?.stepResult ?? 'pending';
-      const complete = prev?.lessonComplete ?? false;
-      const nextState = this.buildTrainingState(gs, result, feedback, complete);
-      this.lastTrainingState = nextState;
-      this.onStateChange(nextState);
-    };
-
-    engine.onPieceLock = (lockedPiece, clear) => {
-      this.handleLock(lockedPiece, clear);
-    };
-
-    engine.onGameOver = (gs) => {
-      const nextState = this.buildTrainingState(gs, 'fail', 'Board topped out. Retry the lesson.');
-      this.lastTrainingState = nextState;
-      this.onStateChange(nextState);
-    };
-
-    return engine;
-  }
-
-  private getStepPieceSequence(): PieceType[] {
-    const remaining = this.lesson.steps.slice(this.currentStepIndex).map((s) => s.neededPiece);
-    return remaining.length ? remaining : [this.lesson.steps[this.lesson.steps.length - 1].neededPiece];
-  }
-
-  private isTargetMatch(lockedPiece: ActivePiece, step: LessonStep): boolean {
-    return (
-      lockedPiece.type === step.neededPiece &&
-      lockedPiece.position.x === step.targetPosition.x &&
-      lockedPiece.position.y === step.targetPosition.y &&
-      lockedPiece.rotation === step.targetPosition.rotation
-    );
-  }
-
-  private evaluateStep(step: LessonStep, lockedPiece: ActivePiece, clear: ClearResult | null): StepResult {
-    const cond = step.successCondition;
-    if (step.allowedPieces?.length && !step.allowedPieces.includes(lockedPiece.type)) return 'fail';
-
-    switch (cond.type) {
-      case 'place':
-        return this.isTargetMatch(lockedPiece, step) ? 'success' : 'fail';
-      case 'tspin':
-        return clear && clear.isTSpin && clear.linesCleared >= (cond.minLines ?? 1) ? 'success' : 'fail';
-      case 'tspin_double':
-        return clear && clear.isTSpin && !clear.isMiniTSpin && clear.linesCleared === 2 ? 'success' : 'fail';
-      case 'tspin_triple':
-        return clear && clear.isTSpin && clear.linesCleared === 3 ? 'success' : 'fail';
-      case 'perfect_clear':
-        return clear && clear.isPerfectClear ? 'success' : 'fail';
-      case 'clear':
-        this.accumulatedClears += clear?.linesCleared ?? 0;
-        return this.accumulatedClears >= (cond.minLines ?? 1) ? 'success' : 'pending';
-      default:
-        return 'fail';
-    }
-  }
-
-  private handleLock(lockedPiece: ActivePiece, clear: ClearResult | null): void {
-    const step = this.getCurrentStep();
-    if (!step) return;
-
-    const result = this.evaluateStep(step, lockedPiece, clear);
-    if (result === 'pending') {
-      const pendingState = this.buildTrainingState(this.innerEngine.getState(), 'pending', step.subTip ?? '');
-      this.lastTrainingState = pendingState;
-      this.onStateChange(pendingState);
-      return;
-    }
-
-    this.onStepComplete(this.currentStepIndex, result);
-    if (result === 'success') {
-      this.currentStepIndex++;
-      this.accumulatedClears = 0;
-      if (this.currentStepIndex >= this.lesson.steps.length) {
-        this.innerEngine.pause();
-        const doneState = this.buildTrainingState(
-          this.innerEngine.getState(),
-          'success',
-          'Lesson Complete! Well done.',
-          true
-        );
-        this.lastTrainingState = doneState;
-        this.onStateChange(doneState);
-        return;
+  private buildQueue(forced: PieceType[]): PieceType[] {
+    const allPieces: PieceType[] = ['I', 'O', 'T', 'S', 'Z', 'J', 'L'];
+    const queue = [...forced];
+    while (queue.length < 50) {
+      const bag = [...allPieces];
+      for (let i = bag.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [bag[i], bag[j]] = [bag[j], bag[i]];
       }
-      this.innerEngine.setPracticeSequence(this.getStepPieceSequence(), true);
-      const okState = this.buildTrainingState(this.innerEngine.getState(), 'success', step.feedbackSuccess);
-      this.lastTrainingState = okState;
-      this.onStateChange(okState);
-      return;
+      queue.push(...bag);
+    }
+    return queue;
+  }
+
+  private nextPiece(): PieceType {
+    const piece = this.pieceQueue[this.queuePosition % this.pieceQueue.length];
+    this.queuePosition++;
+    return piece;
+  }
+
+  private getNextQueuePreview(): PieceType[] {
+    return Array.from({ length: 5 }, (_, i) => this.pieceQueue[(this.queuePosition + i) % this.pieceQueue.length]);
+  }
+
+  private computeHologram(): HologramData | null {
+    if (!this.showHologramActive) return null;
+    if (this.stepResult !== 'pending') return null;
+
+    const step = this.getCurrentStep();
+    if (!step) return null;
+
+    const target = step.targetPosition;
+    const piece = step.neededPiece;
+    if (!this.activePiece || this.activePiece.type !== piece) return null;
+
+    const testPiece: ActivePiece = {
+      type: piece,
+      rotation: target.rotation,
+      position: { x: target.x, y: -2 },
+    };
+
+    let bestY = target.y;
+    let testY = -4;
+    while (testY < BOARD_HEIGHT) {
+      const test = { ...testPiece, position: { x: target.x, y: testY } };
+      if (!isValidPosition(this.board, test)) {
+        bestY = testY - 1;
+        break;
+      }
+      if (testY === BOARD_HEIGHT - 1) {
+        bestY = testY;
+        break;
+      }
+      testY++;
     }
 
-    const failState = this.buildTrainingState(this.innerEngine.getState(), 'fail', step.feedbackFail);
-    this.lastTrainingState = failState;
-    this.onStateChange(failState);
+    const holoPiece: ActivePiece = {
+      type: piece,
+      rotation: target.rotation,
+      position: { x: target.x, y: bestY },
+    };
+    if (!isValidPosition(this.board, holoPiece, 0, 0)) return null;
+
+    return {
+      x: target.x,
+      y: bestY,
+      rotation: target.rotation,
+      piece,
+    };
   }
 
   private getCurrentStep(): LessonStep | null {
     return this.lesson.steps[this.currentStepIndex] ?? null;
   }
 
-  private buildTrainingState(
-    gs: GameState,
-    result: StepResult,
-    message: string,
-    lessonComplete = false
-  ): TrainingState {
-    return {
-      gameState: gs,
-      currentStep: this.currentStepIndex,
-      totalSteps: this.lesson.steps.length,
-      stepResult: result,
-      feedbackMessage: message,
-      lessonComplete,
-      showHologram: true,
-    };
+  private spawnNext(): void {
+    const type = this.nextPiece();
+    this.spawnPiece(type);
   }
 
+  private spawnPiece(type: PieceType): void {
+    const pos = getSpawnPosition(type);
+    const piece: ActivePiece = { type, rotation: 0, position: pos };
+
+    if (!isValidPosition(this.board, piece) && !isValidPosition(this.board, piece, 0, -1)) {
+      this.isGameOver = true;
+      this.activePiece = null;
+      this.emitState();
+      return;
+    }
+
+    this.activePiece = piece;
+    this.isOnGround = false;
+    this.lockTimer = 0;
+    this.lockResets = 0;
+    this.lastMoveWasRotation = false;
+    this.emitState();
+  }
+
+  private lockActive(): void {
+    if (!this.activePiece) return;
+
+    const { isTSpin, isMiniTSpin } = detectTSpin(this.board, this.activePiece, this.lastMoveWasRotation);
+    const newBoard = lockPiece(this.board, this.activePiece);
+    const { board: clearedBoard, linesCleared } = clearLines(newBoard);
+    this.board = clearedBoard;
+    this.piecesPlaced++;
+    this.linesCleared += linesCleared;
+    this.lines += linesCleared;
+
+    const isPC = isPerfectClear(this.board);
+    const isB2BEligible = linesCleared === 4 || (isTSpin && linesCleared > 0);
+    const wasB2B = this.isBackToBack && isB2BEligible;
+    this.isBackToBack = isB2BEligible;
+    if (linesCleared > 0) this.combo++;
+    else this.combo = -1;
+
+    const clearResult: ClearResult = {
+      linesCleared,
+      clearType: this.determineClearType(linesCleared, isTSpin, isMiniTSpin),
+      isTSpin,
+      isMiniTSpin,
+      isBackToBack: wasB2B,
+      isPerfectClear: isPC,
+      attack: 0,
+      score: 0,
+      combo: this.combo,
+    };
+
+    this.activePiece = null;
+    this.canHold = true;
+    this.lastMoveWasRotation = false;
+    this.checkStepSuccess(clearResult, linesCleared, isTSpin, isMiniTSpin, isPC);
+  }
+
+  private determineClearType(lines: number, isTSpin: boolean, isMini: boolean): ClearType {
+    if (isTSpin) {
+      if (isMini) {
+        return lines === 1 ? 'tSpinMiniSingle' : lines === 2 ? 'tSpinMiniDouble' : 'tSpinMini';
+      }
+      return lines === 1 ? 'tSpinSingle' : lines === 2 ? 'tSpinDouble' : lines === 3 ? 'tSpinTriple' : 'none';
+    }
+    return lines === 1 ? 'single' : lines === 2 ? 'double' : lines === 3 ? 'triple' : lines === 4 ? 'tetris' : 'none';
+  }
+
+  private checkStepSuccess(
+    result: ClearResult,
+    linesCleared: number,
+    isTSpin: boolean,
+    isMini: boolean,
+    isPC: boolean
+  ): void {
+    const step = this.getCurrentStep();
+    if (!step) {
+      this.spawnNext();
+      this.emitState();
+      return;
+    }
+
+    const cond = step.successCondition;
+    let success = false;
+
+    switch (cond.type) {
+      case 'place':
+        success = true;
+        break;
+      case 'clear':
+        success = linesCleared >= (cond.minLines || 1);
+        break;
+      case 'tspin':
+        success = isTSpin && linesCleared >= (cond.minLines || 1);
+        break;
+      case 'tspin_double':
+        success = isTSpin && !isMini && linesCleared === 2;
+        break;
+      case 'tspin_triple':
+        success = isTSpin && linesCleared === 3;
+        break;
+      case 'perfect_clear':
+        success = isPC;
+        break;
+    }
+
+    if (success) {
+      this.stepResult = 'success';
+      this.feedbackMessage = step.feedbackSuccess;
+      this.isPaused = true;
+      this.onStepComplete(this.currentStepIndex, 'success');
+
+      setTimeout(() => {
+        this.currentStepIndex++;
+        this.stepResult = 'pending';
+        this.feedbackMessage = '';
+
+        if (this.currentStepIndex >= this.lesson.steps.length) {
+          this.lessonComplete = true;
+          this.isPaused = true;
+          this.emitState();
+        } else {
+          this.isPaused = false;
+          this.spawnNext();
+          this.emitState();
+        }
+      }, 1500);
+    } else {
+      if (linesCleared > 0 || cond.type === 'place') {
+        this.stepResult = 'fail';
+        this.feedbackMessage = step.feedbackFail;
+        this.isPaused = true;
+
+        setTimeout(() => {
+          if (this.stepResult === 'fail') {
+            this.stepResult = 'pending';
+            this.feedbackMessage = '';
+            this.isPaused = false;
+            this.spawnNext();
+            this.emitState();
+          }
+        }, 2500);
+      } else {
+        this.spawnNext();
+      }
+    }
+
+    this.emitState();
+  }
+
+  private emitState(): void {
+    const gameState: GameState = {
+      board: this.board,
+      activePiece: this.activePiece,
+      heldPiece: this.heldPiece,
+      canHold: this.canHold,
+      nextQueue: this.getNextQueuePreview(),
+      score: this.score,
+      level: 1,
+      lines: this.lines,
+      combo: this.combo,
+      isBackToBack: this.isBackToBack,
+      garbageQueue: 0,
+      isGameOver: this.isGameOver,
+      lastClear: null,
+      startTime: this.startTime,
+      gameTime: Date.now() - this.startTime,
+      piecesPlaced: this.piecesPlaced,
+    };
+
+    const hologram = this.computeHologram();
+    this.onStateChange({
+      gameState,
+      currentStep: this.currentStepIndex,
+      totalSteps: this.lesson.steps.length,
+      stepResult: this.stepResult,
+      feedbackMessage: this.feedbackMessage,
+      lessonComplete: this.lessonComplete,
+      hologram,
+    });
+  }
+
+  private loop = (now: number): void => {
+    if (this.isGameOver) return;
+
+    const delta = now - this.lastTick;
+    this.lastTick = now;
+
+    if (!this.isPaused && this.activePiece) {
+      const onGround = !isValidPosition(this.board, this.activePiece, 0, 1);
+
+      if (onGround) {
+        this.isOnGround = true;
+        this.lockTimer += delta;
+        if (this.lockTimer >= LOCK_DELAY) {
+          this.lockActive();
+          this.animFrame = requestAnimationFrame(this.loop);
+          return;
+        }
+      } else {
+        this.isOnGround = false;
+        this.lockTimer = 0;
+        this.gravityAcc += delta;
+        const gravMs = GRAVITY_TABLE[1];
+        while (this.gravityAcc >= gravMs) {
+          this.gravityAcc -= gravMs;
+          if (isValidPosition(this.board, this.activePiece, 0, 1)) {
+            this.activePiece = {
+              ...this.activePiece,
+              position: { ...this.activePiece.position, y: this.activePiece.position.y + 1 },
+            };
+          }
+        }
+      }
+
+      this.emitState();
+    }
+
+    this.animFrame = requestAnimationFrame(this.loop);
+  };
+
   start(): void {
-    this.innerEngine.start();
+    this.spawnNext();
+    this.lastTick = performance.now();
+    this.animFrame = requestAnimationFrame(this.loop);
   }
 
   restart(): void {
-    this.innerEngine.stop();
+    cancelAnimationFrame(this.animFrame);
+    this.board = this.lesson.initialBoard.map((row) => [...row]) as Board;
+    this.heldPiece = this.lesson.initialHold;
+    this.canHold = true;
+    this.activePiece = null;
     this.currentStepIndex = 0;
-    this.accumulatedClears = 0;
-    this.lastTrainingState = null;
-    this.innerEngine = this.buildEngine();
-    this.innerEngine.start();
+    this.stepResult = 'pending';
+    this.feedbackMessage = '';
+    this.lessonComplete = false;
+    this.isPaused = false;
+    this.isGameOver = false;
+    this.isOnGround = false;
+    this.lockTimer = 0;
+    this.lockResets = 0;
+    this.gravityAcc = 0;
+    this.combo = -1;
+    this.isBackToBack = false;
+    this.lines = 0;
+    this.linesCleared = 0;
+    this.piecesPlaced = 0;
+    this.startTime = Date.now();
+    this.pieceQueue = this.buildQueue(this.lesson.initialQueue);
+    this.queuePosition = 0;
+    this.start();
+  }
+
+  stop(): void {
+    cancelAnimationFrame(this.animFrame);
+  }
+
+  setShowHologram(show: boolean): void {
+    this.showHologramActive = show;
+    this.emitState();
   }
 
   moveLeft(): void {
-    this.innerEngine.moveLeft();
+    if (!this.activePiece || this.isPaused || this.isGameOver) return;
+    if (isValidPosition(this.board, this.activePiece, -1, 0)) {
+      this.activePiece = {
+        ...this.activePiece,
+        position: { ...this.activePiece.position, x: this.activePiece.position.x - 1 },
+      };
+      this.lastMoveWasRotation = false;
+      this.resetLock();
+      this.emitState();
+    }
   }
+
   moveRight(): void {
-    this.innerEngine.moveRight();
+    if (!this.activePiece || this.isPaused || this.isGameOver) return;
+    if (isValidPosition(this.board, this.activePiece, 1, 0)) {
+      this.activePiece = {
+        ...this.activePiece,
+        position: { ...this.activePiece.position, x: this.activePiece.position.x + 1 },
+      };
+      this.lastMoveWasRotation = false;
+      this.resetLock();
+      this.emitState();
+    }
   }
+
   softDrop(): void {
-    this.innerEngine.softDrop();
+    if (!this.activePiece || this.isPaused || this.isGameOver) return;
+    if (isValidPosition(this.board, this.activePiece, 0, 1)) {
+      this.activePiece = {
+        ...this.activePiece,
+        position: { ...this.activePiece.position, y: this.activePiece.position.y + 1 },
+      };
+      this.gravityAcc = 0;
+      this.emitState();
+    }
   }
-  sonicSoftDrop(): void {
-    this.innerEngine.sonicSoftDrop();
-  }
+
   hardDrop(): void {
-    this.innerEngine.hardDrop();
+    if (!this.activePiece || this.isPaused || this.isGameOver) return;
+    const dist = getHardDropDistance(this.board, this.activePiece);
+    this.activePiece = {
+      ...this.activePiece,
+      position: { ...this.activePiece.position, y: this.activePiece.position.y + dist },
+    };
+    this.emitState();
+    this.lockActive();
   }
+
   rotateClockwise(): void {
-    this.innerEngine.rotateClockwise();
+    this.rotate(1);
   }
+
   rotateCounter(): void {
-    this.innerEngine.rotateCounter();
+    this.rotate(-1);
   }
+
   rotate180(): void {
-    this.innerEngine.rotate180();
+    this.rotate(2);
   }
+
   hold(): void {
-    this.innerEngine.hold();
-  }
-  stop(): void {
-    this.innerEngine.stop();
+    if (!this.activePiece || !this.canHold || this.isPaused || this.isGameOver) return;
+    const toHold = this.activePiece.type;
+    if (this.heldPiece) {
+      const swap = this.heldPiece;
+      this.heldPiece = toHold;
+      this.spawnPiece(swap);
+    } else {
+      this.heldPiece = toHold;
+      this.spawnNext();
+    }
+    this.canHold = false;
+    this.lockTimer = 0;
+    this.lockResets = 0;
+    this.emitState();
   }
 
-  getHologramTarget(): { x: number; y: number; rotation: 0 | 1 | 2 | 3; piece: PieceType } | null {
-    const step = this.getCurrentStep();
-    if (!step) return null;
-    return { ...step.targetPosition, piece: step.neededPiece };
+  private rotate(dir: 1 | -1 | 2): void {
+    if (!this.activePiece || this.isPaused || this.isGameOver) return;
+    const rotated = tryRotate(this.board, this.activePiece, dir);
+    if (rotated) {
+      this.activePiece = rotated;
+      this.lastMoveWasRotation = true;
+      this.resetLock();
+      this.emitState();
+    }
   }
 
-  getCurrentStepData(): LessonStep | null {
-    return this.getCurrentStep();
+  private resetLock(): void {
+    if (this.isOnGround && this.lockResets < MAX_LOCK_RESETS) {
+      this.lockTimer = 0;
+      this.lockResets++;
+    }
   }
 }

@@ -1,31 +1,24 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import type { GameState, PieceType } from '@/lib/game/types';
-import { BOARD_WIDTH, BOARD_HEIGHT, HIDDEN_ROWS, PIECE_COLORS, PIECE_GHOST_COLORS } from '@/lib/game/constants';
+import { GameState } from '@/lib/game/types';
+import { BOARD_WIDTH, BOARD_HEIGHT, PIECE_COLORS, PIECE_GHOST_COLORS } from '@/lib/game/constants';
 import { getGhostPosition } from '@/lib/game/board';
 import { getPieceMatrix } from '@/lib/game/tetrominos';
+import { HologramData } from '@/lib/training/trainingEngine';
 
 const PIECE_TYPE_MAP = ['', 'I', 'O', 'T', 'S', 'Z', 'J', 'L', 'G'];
 const CELL = 28;
 
-interface HologramTarget {
-  x: number;
-  y: number;
-  rotation: 0 | 1 | 2 | 3;
-  piece: PieceType;
-}
-
 interface TrainingCanvasProps {
   gameState: GameState;
-  hologram: HologramTarget | null;
-  showHologram: boolean;
+  hologram: HologramData | null;
 }
 
-export function TrainingCanvas({ gameState, hologram, showHologram }: TrainingCanvasProps) {
+export function TrainingCanvas({ gameState, hologram }: TrainingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef(0);
-  const pulseRef = useRef(0);
+  const frameRef = useRef(0);
 
   const width = BOARD_WIDTH * CELL;
   const height = BOARD_HEIGHT * CELL;
@@ -36,10 +29,9 @@ export function TrainingCanvas({ gameState, hologram, showHologram }: TrainingCa
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let frame = 0;
     const draw = () => {
-      frame++;
-      pulseRef.current = (Math.sin(frame * 0.08) + 1) / 2;
+      frameRef.current++;
+      const pulse = (Math.sin(frameRef.current * 0.07) + 1) / 2;
 
       ctx.fillStyle = '#08081a';
       ctx.fillRect(0, 0, width, height);
@@ -61,9 +53,9 @@ export function TrainingCanvas({ gameState, hologram, showHologram }: TrainingCa
 
       for (let row = 0; row < BOARD_HEIGHT; row++) {
         for (let col = 0; col < BOARD_WIDTH; col++) {
-          const cell = gameState.board[row + HIDDEN_ROWS]?.[col] ?? 0;
-          if (cell === 0) continue;
-          const type = PIECE_TYPE_MAP[cell] ?? 'G';
+          const cell = gameState.board[row][col];
+          if (!cell) continue;
+          const type = PIECE_TYPE_MAP[cell];
           drawCell(ctx, col, row, PIECE_COLORS[type] || '#445566', CELL);
         }
       }
@@ -75,7 +67,7 @@ export function TrainingCanvas({ gameState, hologram, showHologram }: TrainingCa
           for (let c = 0; c < 4; c++) {
             if (!matrix[r][c]) continue;
             const bx = gameState.activePiece.position.x + c;
-            const by = ghost.y + r - HIDDEN_ROWS;
+            const by = ghost.y + r;
             if (by >= 0 && by < BOARD_HEIGHT) {
               drawGhost(ctx, bx, by, PIECE_GHOST_COLORS[gameState.activePiece.type], CELL);
             }
@@ -83,11 +75,11 @@ export function TrainingCanvas({ gameState, hologram, showHologram }: TrainingCa
         }
       }
 
-      if (showHologram && hologram) {
+      if (hologram) {
         const hMatrix = getPieceMatrix(hologram.piece, hologram.rotation);
-        const pulse = pulseRef.current;
-        const alpha = 0.25 + pulse * 0.35;
-        const color = PIECE_COLORS[hologram.piece] || '#00ffff';
+        const color = PIECE_COLORS[hologram.piece];
+        const alpha = 0.22 + pulse * 0.28;
+        const cells: { bx: number; by: number }[] = [];
 
         for (let r = 0; r < 4; r++) {
           for (let c = 0; c < 4; c++) {
@@ -95,21 +87,60 @@ export function TrainingCanvas({ gameState, hologram, showHologram }: TrainingCa
             const bx = hologram.x + c;
             const by = hologram.y + r;
             if (by < 0 || by >= BOARD_HEIGHT || bx < 0 || bx >= BOARD_WIDTH) continue;
+            cells.push({ bx, by });
+          }
+        }
 
-            const px = bx * CELL;
-            const py = by * CELL;
+        for (const { bx, by } of cells) {
+          const px = bx * CELL;
+          const py = by * CELL;
 
-            ctx.shadowColor = color;
-            ctx.shadowBlur = 8 + pulse * 12;
-            ctx.globalAlpha = alpha;
+          ctx.shadowColor = color;
+          ctx.shadowBlur = 10 + pulse * 14;
+
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = color;
+          ctx.fillRect(px + 2, py + 2, CELL - 4, CELL - 4);
+
+          ctx.globalAlpha = 0.55 + pulse * 0.35;
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(px + 2, py + 2, CELL - 4, CELL - 4);
+
+          ctx.shadowBlur = 0;
+          ctx.globalAlpha = 1;
+
+          const cs = 5;
+          ctx.fillStyle = color;
+          ctx.globalAlpha = 0.85 + pulse * 0.15;
+          ctx.fillRect(px + 2, py + 2, cs, 2);
+          ctx.fillRect(px + 2, py + 2, 2, cs);
+          ctx.fillRect(px + CELL - 2 - cs, py + 2, cs, 2);
+          ctx.fillRect(px + CELL - 4, py + 2, 2, cs);
+          ctx.fillRect(px + 2, py + CELL - 4, cs, 2);
+          ctx.fillRect(px + 2, py + CELL - 2 - cs, 2, cs);
+          ctx.fillRect(px + CELL - 2 - cs, py + CELL - 4, cs, 2);
+          ctx.fillRect(px + CELL - 4, py + CELL - 2 - cs, 2, cs);
+          ctx.globalAlpha = 1;
+        }
+
+        if (cells.length > 0) {
+          const minBy = Math.min(...cells.map((c) => c.by));
+          const avgBx = cells.reduce((s, c) => s + c.bx, 0) / cells.length;
+          const arrowX = (avgBx + 0.5) * CELL;
+          const arrowY = minBy * CELL;
+
+          if (arrowY > 30) {
+            ctx.globalAlpha = 0.45 + pulse * 0.45;
             ctx.fillStyle = color;
-            ctx.fillRect(px + 2, py + 2, CELL - 4, CELL - 4);
-
-            ctx.globalAlpha = 0.5 + pulse * 0.4;
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 1.5;
-            ctx.strokeRect(px + 2, py + 2, CELL - 4, CELL - 4);
-
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.moveTo(arrowX - 9, arrowY - 20);
+            ctx.lineTo(arrowX + 9, arrowY - 20);
+            ctx.lineTo(arrowX, arrowY - 4);
+            ctx.closePath();
+            ctx.fill();
             ctx.shadowBlur = 0;
             ctx.globalAlpha = 1;
           }
@@ -123,7 +154,7 @@ export function TrainingCanvas({ gameState, hologram, showHologram }: TrainingCa
           for (let c = 0; c < 4; c++) {
             if (!matrix[r][c]) continue;
             const bx = gameState.activePiece.position.x + c;
-            const by = gameState.activePiece.position.y + r - HIDDEN_ROWS;
+            const by = gameState.activePiece.position.y + r;
             if (by >= 0 && by < BOARD_HEIGHT) {
               drawCell(ctx, bx, by, color, CELL);
             }
@@ -136,7 +167,7 @@ export function TrainingCanvas({ gameState, hologram, showHologram }: TrainingCa
 
     animRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(animRef.current);
-  }, [gameState, hologram, showHologram, width, height]);
+  }, [gameState, hologram, width, height]);
 
   return (
     <canvas

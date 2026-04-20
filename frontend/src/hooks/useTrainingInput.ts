@@ -1,10 +1,12 @@
 import { useEffect, useRef, useCallback } from 'react';
-import type { RefObject } from 'react';
 import { useSettingsStore } from '@/store/settingsStore';
-import type { TrainingEngine } from '@/lib/training/trainingEngine';
+import { TrainingEngine } from '@/lib/training/trainingEngine';
 
-export function useTrainingInput(engineRef: RefObject<TrainingEngine | null>, active: boolean) {
-  const { keybinds, das, arr, softDropFactor } = useSettingsStore();
+export function useTrainingInput(
+  engineRef: React.RefObject<TrainingEngine | null>,
+  active: boolean
+) {
+  const { keybinds, das, arr } = useSettingsStore();
   const heldKey = useRef<string | null>(null);
   const dasTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const arrInterval = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -19,40 +21,36 @@ export function useTrainingInput(engineRef: RefObject<TrainingEngine | null>, ac
     softDropInterval.current = null;
   }, []);
 
-  const handleAction = useCallback(
-    (action: string) => {
-      const engine = engineRef.current;
-      if (!engine) return;
-      switch (action) {
-        case 'moveLeft':
-          engine.moveLeft();
-          break;
-        case 'moveRight':
-          engine.moveRight();
-          break;
-        case 'softDrop':
-          if (softDropFactor === 0) engine.sonicSoftDrop();
-          else engine.softDrop();
-          break;
-        case 'hardDrop':
-          engine.hardDrop();
-          break;
-        case 'rotateClockwise':
-          engine.rotateClockwise();
-          break;
-        case 'rotateCounter':
-          engine.rotateCounter();
-          break;
-        case 'rotate180':
-          engine.rotate180();
-          break;
-        case 'hold':
-          engine.hold();
-          break;
-      }
-    },
-    [engineRef, softDropFactor]
-  );
+  const handleAction = useCallback((action: string) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    switch (action) {
+      case 'moveLeft':
+        engine.moveLeft();
+        break;
+      case 'moveRight':
+        engine.moveRight();
+        break;
+      case 'softDrop':
+        engine.softDrop();
+        break;
+      case 'hardDrop':
+        engine.hardDrop();
+        break;
+      case 'rotateClockwise':
+        engine.rotateClockwise();
+        break;
+      case 'rotateCounter':
+        engine.rotateCounter();
+        break;
+      case 'rotate180':
+        engine.rotate180();
+        break;
+      case 'hold':
+        engine.hold();
+        break;
+    }
+  }, [engineRef]);
 
   useEffect(() => {
     if (!active) return;
@@ -72,15 +70,16 @@ export function useTrainingInput(engineRef: RefObject<TrainingEngine | null>, ac
           arrInterval.current = setInterval(() => handleAction(action), arr);
         }, das);
       }
-      if (action === 'softDrop' && softDropFactor > 0) {
+      if (action === 'softDrop') {
         softDropInterval.current = setInterval(() => handleAction('softDrop'), 50);
       }
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
-      if (e.code !== heldKey.current) return;
-      heldKey.current = null;
-      clearTimers();
+      if (e.code === heldKey.current) {
+        heldKey.current = null;
+        clearTimers();
+      }
     };
 
     window.addEventListener('keydown', onKeyDown);
@@ -90,5 +89,5 @@ export function useTrainingInput(engineRef: RefObject<TrainingEngine | null>, ac
       window.removeEventListener('keyup', onKeyUp);
       clearTimers();
     };
-  }, [active, keybinds, arr, das, softDropFactor, handleAction, clearTimers]);
+  }, [active, keybinds, das, arr, handleAction, clearTimers]);
 }

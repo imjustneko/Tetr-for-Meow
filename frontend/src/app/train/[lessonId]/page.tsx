@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/authStore';
 import { getLessonById } from '@/lib/training/lessons';
-import { TrainingEngine, type TrainingState } from '@/lib/training/trainingEngine';
+import { TrainingEngine, TrainingState } from '@/lib/training/trainingEngine';
 import { TrainingCanvas } from '@/components/training/TrainingCanvas';
 import { TrainingHUD } from '@/components/training/TrainingHUD';
 import { HoldBox } from '@/components/game/HoldBox';
@@ -13,9 +13,6 @@ import { NextQueue } from '@/components/game/NextQueue';
 import { Button } from '@/components/ui/Button';
 import { useTrainingInput } from '@/hooks/useTrainingInput';
 import api from '@/lib/api';
-import type { PieceType } from '@/lib/game/types';
-
-type HologramTarget = { x: number; y: number; rotation: 0 | 1 | 2 | 3; piece: PieceType };
 
 export default function LessonPage() {
   const params = useParams();
@@ -28,7 +25,6 @@ export default function LessonPage() {
   const [trainingState, setTrainingState] = useState<TrainingState | null>(null);
   const [isActive, setIsActive] = useState(false);
   const [showHologram, setShowHologram] = useState(true);
-  const [hologram, setHologram] = useState<HologramTarget | null>(null);
   const [attempts, setAttempts] = useState(0);
 
   useTrainingInput(engineRef, isActive);
@@ -43,10 +39,10 @@ export default function LessonPage() {
 
     const engine = new TrainingEngine(lesson);
     engineRef.current = engine;
+    engine.setShowHologram(showHologram);
 
     engine.onStateChange = (state) => {
-      setTrainingState({ ...state, showHologram });
-      setHologram(showHologram ? engine.getHologramTarget() : null);
+      setTrainingState(state);
       if (state.lessonComplete && user) {
         api
           .post('/api/training/progress', {
@@ -76,11 +72,6 @@ export default function LessonPage() {
   useEffect(() => {
     return () => engineRef.current?.stop();
   }, []);
-
-  useEffect(() => {
-    const target = showHologram ? engineRef.current?.getHologramTarget() ?? null : null;
-    setHologram(target);
-  }, [showHologram, trainingState]);
 
   if (!lesson) {
     return (
@@ -137,7 +128,7 @@ export default function LessonPage() {
             <p className="mb-8 leading-relaxed text-gray-400">{lesson.description}</p>
 
             <div className="mb-8 rounded-2xl border border-[#2a2a3a] bg-[#12121a] p-6 text-left">
-              <h3 className="mb-3 font-bold text-white">What you will do:</h3>
+              <h3 className="mb-3 font-bold text-white">What you&apos;ll do:</h3>
               {lesson.steps.map((step, i) => (
                 <div key={i} className="mb-2 flex items-start gap-3">
                   <span className="mt-0.5 font-mono text-sm text-cyan-400">{i + 1}.</span>
@@ -167,7 +158,7 @@ export default function LessonPage() {
 
             <div className="relative flex flex-col items-center gap-3">
               {trainingState ? (
-                <TrainingCanvas gameState={trainingState.gameState} hologram={hologram} showHologram={showHologram} />
+                <TrainingCanvas gameState={trainingState.gameState} hologram={trainingState?.hologram ?? null} />
               ) : null}
 
               {trainingState?.lessonComplete ? (
@@ -204,7 +195,13 @@ export default function LessonPage() {
                 stepResult={trainingState?.stepResult ?? 'pending'}
                 feedbackMessage={trainingState?.feedbackMessage ?? ''}
                 onRetry={handleRetry}
-                onToggleHologram={() => setShowHologram((h) => !h)}
+                onToggleHologram={() => {
+                  setShowHologram((prev) => {
+                    const next = !prev;
+                    engineRef.current?.setShowHologram(next);
+                    return next;
+                  });
+                }}
                 showHologram={showHologram}
               />
             </div>
