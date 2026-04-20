@@ -34,13 +34,13 @@ type Drill = {
 
 const DRILLS: Drill[] = [
   {
-    id: 'tspin-double',
-    title: 'T-Spin Double',
-    description: 'Build and place by guided targets to learn T-Spin setup flow.',
+    id: 't-spin-slot',
+    title: 'T-Spin Slot Builder',
+    description: 'Learn to leave a T-slot, stack around it, then rotate T into the gap.',
     steps: [
       {
         piece: 'J',
-        instruction: 'Step 1: Place J in the left cavity target.',
+        instruction: 'Step 1: Build left foundation and keep center open for a future slot.',
         hologramCells: [
           { x: 2, y: 18 },
           { x: 2, y: 19 },
@@ -50,34 +50,44 @@ const DRILLS: Drill[] = [
       },
       {
         piece: 'L',
-        instruction: 'Step 2: Place L on the right side to shape the slot.',
+        instruction: 'Step 2: Build right wall while preserving a center cavity.',
         hologramCells: [
+          { x: 7, y: 17 },
+          { x: 5, y: 18 },
           { x: 6, y: 18 },
-          { x: 4, y: 19 },
-          { x: 5, y: 19 },
-          { x: 6, y: 19 },
+          { x: 7, y: 18 },
+        ],
+      },
+      {
+        piece: 'O',
+        instruction: 'Step 3: Stabilize one side so the T-slot shape stays intact.',
+        hologramCells: [
+          { x: 0, y: 17 },
+          { x: 1, y: 17 },
+          { x: 0, y: 18 },
+          { x: 1, y: 18 },
         ],
       },
       {
         piece: 'T',
-        instruction: 'Step 3: Drop T into the center target and finish.',
+        instruction: 'Step 4: Rotate T into the prepared center slot (your spin finish).',
         hologramCells: [
+          { x: 4, y: 17 },
+          { x: 3, y: 18 },
           { x: 4, y: 18 },
-          { x: 3, y: 19 },
-          { x: 4, y: 19 },
-          { x: 5, y: 19 },
+          { x: 5, y: 18 },
         ],
       },
     ],
   },
   {
-    id: 'combo-chain',
-    title: 'Combo Chain',
-    description: 'Practice clean combo stacking with strict piece-by-piece guidance.',
+    id: 'sz-spin-slot',
+    title: 'S/Z Spin Setup',
+    description: 'Create an overhang cavity, then slide S/Z into the pocket by rotation.',
     steps: [
       {
         piece: 'J',
-        instruction: 'Step 1: Place J on the lower-left target.',
+        instruction: 'Step 1: Build a low left platform.',
         hologramCells: [
           { x: 1, y: 18, color: 'rgba(255, 220, 0, 0.22)' },
           { x: 1, y: 19, color: 'rgba(255, 220, 0, 0.22)' },
@@ -86,50 +96,117 @@ const DRILLS: Drill[] = [
         ],
       },
       {
-        piece: 'L',
-        instruction: 'Step 2: Place L opposite to keep the channel open.',
+        piece: 'O',
+        instruction: 'Step 2: Add support blocks and keep a 2-cell channel open.',
         hologramCells: [
-          { x: 6, y: 18, color: 'rgba(255, 220, 0, 0.22)' },
-          { x: 4, y: 19, color: 'rgba(255, 220, 0, 0.22)' },
-          { x: 5, y: 19, color: 'rgba(255, 220, 0, 0.22)' },
-          { x: 6, y: 19, color: 'rgba(255, 220, 0, 0.22)' },
+          { x: 7, y: 17, color: 'rgba(255, 220, 0, 0.22)' },
+          { x: 8, y: 17, color: 'rgba(255, 220, 0, 0.22)' },
+          { x: 7, y: 18, color: 'rgba(255, 220, 0, 0.22)' },
+          { x: 8, y: 18, color: 'rgba(255, 220, 0, 0.22)' },
         ],
       },
       {
-        piece: 'I',
-        instruction: 'Step 3: Place I vertical in the right well target.',
+        piece: 'L',
+        instruction: 'Step 3: Build an overhang so S/Z has to rotate into place.',
         hologramCells: [
-          { x: 8, y: 16, color: 'rgba(255, 220, 0, 0.22)' },
-          { x: 8, y: 17, color: 'rgba(255, 220, 0, 0.22)' },
-          { x: 8, y: 18, color: 'rgba(255, 220, 0, 0.22)' },
-          { x: 8, y: 19, color: 'rgba(255, 220, 0, 0.22)' },
+          { x: 5, y: 16, color: 'rgba(255, 220, 0, 0.22)' },
+          { x: 3, y: 17, color: 'rgba(255, 220, 0, 0.22)' },
+          { x: 4, y: 17, color: 'rgba(255, 220, 0, 0.22)' },
+          { x: 5, y: 17, color: 'rgba(255, 220, 0, 0.22)' },
+        ],
+      },
+      {
+        piece: 'S',
+        instruction: 'Step 4: Rotate S into the highlighted cavity (spin-fit finish).',
+        hologramCells: [
+          { x: 4, y: 15, color: 'rgba(255, 220, 0, 0.22)' },
+          { x: 5, y: 15, color: 'rgba(255, 220, 0, 0.22)' },
+          { x: 3, y: 16, color: 'rgba(255, 220, 0, 0.22)' },
+          { x: 4, y: 16, color: 'rgba(255, 220, 0, 0.22)' },
         ],
       },
     ],
   },
   {
-    id: 'b2b-stack',
-    title: 'B2B Pressure',
-    description: 'Build a simple right-side well and practice B2B structure.',
+    id: 'lj-spin-slot',
+    title: 'L/J Spin Slot',
+    description: 'Practice creating a side pocket and rotating L/J into that narrow gap.',
     steps: [
       {
-        piece: 'J',
-        instruction: 'Step 1: Place J on the left to raise your stack.',
+        piece: 'O',
+        instruction: 'Step 1: Build a stable base block.',
         hologramCells: [
-          { x: 1, y: 18, color: 'rgba(130, 200, 255, 0.22)' },
-          { x: 1, y: 19, color: 'rgba(130, 200, 255, 0.22)' },
+          { x: 2, y: 18, color: 'rgba(130, 200, 255, 0.22)' },
+          { x: 3, y: 18, color: 'rgba(130, 200, 255, 0.22)' },
           { x: 2, y: 19, color: 'rgba(130, 200, 255, 0.22)' },
           { x: 3, y: 19, color: 'rgba(130, 200, 255, 0.22)' },
         ],
       },
       {
-        piece: 'I',
-        instruction: 'Step 2: Place I vertically in the right well.',
+        piece: 'T',
+        instruction: 'Step 2: Add a center overhang and keep the side pocket open.',
         hologramCells: [
-          { x: 8, y: 16, color: 'rgba(130, 200, 255, 0.22)' },
-          { x: 8, y: 17, color: 'rgba(130, 200, 255, 0.22)' },
-          { x: 8, y: 18, color: 'rgba(130, 200, 255, 0.22)' },
-          { x: 8, y: 19, color: 'rgba(130, 200, 255, 0.22)' },
+          { x: 6, y: 18, color: 'rgba(130, 200, 255, 0.22)' },
+          { x: 5, y: 19, color: 'rgba(130, 200, 255, 0.22)' },
+          { x: 6, y: 19, color: 'rgba(130, 200, 255, 0.22)' },
+          { x: 7, y: 19, color: 'rgba(130, 200, 255, 0.22)' },
+        ],
+      },
+      {
+        piece: 'J',
+        instruction: 'Step 3: Rotate J into the pocket (L/J spin concept).',
+        hologramCells: [
+          { x: 0, y: 16, color: 'rgba(130, 200, 255, 0.22)' },
+          { x: 0, y: 17, color: 'rgba(130, 200, 255, 0.22)' },
+          { x: 1, y: 17, color: 'rgba(130, 200, 255, 0.22)' },
+          { x: 2, y: 17, color: 'rgba(130, 200, 255, 0.22)' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'i-spin-well',
+    title: 'I-Spin Well Control',
+    description: 'Learn to leave a clean left well, build around it, then drop I for efficient scoring.',
+    steps: [
+      {
+        piece: 'L',
+        instruction: 'Step 1: Build the right floor and intentionally leave left well space.',
+        hologramCells: [
+          { x: 8, y: 18, color: 'rgba(0, 220, 255, 0.22)' },
+          { x: 6, y: 19, color: 'rgba(0, 220, 255, 0.22)' },
+          { x: 7, y: 19, color: 'rgba(0, 220, 255, 0.22)' },
+          { x: 8, y: 19, color: 'rgba(0, 220, 255, 0.22)' },
+        ],
+      },
+      {
+        piece: 'J',
+        instruction: 'Step 2: Raise stack while keeping the left channel open.',
+        hologramCells: [
+          { x: 2, y: 18, color: 'rgba(0, 220, 255, 0.22)' },
+          { x: 2, y: 19, color: 'rgba(0, 220, 255, 0.22)' },
+          { x: 3, y: 19, color: 'rgba(0, 220, 255, 0.22)' },
+          { x: 4, y: 19, color: 'rgba(0, 220, 255, 0.22)' },
+        ],
+      },
+      {
+        piece: 'O',
+        instruction: 'Step 3: Fill center safely and protect the open well.',
+        hologramCells: [
+          { x: 5, y: 17, color: 'rgba(0, 220, 255, 0.22)' },
+          { x: 6, y: 17, color: 'rgba(0, 220, 255, 0.22)' },
+          { x: 5, y: 18, color: 'rgba(0, 220, 255, 0.22)' },
+          { x: 6, y: 18, color: 'rgba(0, 220, 255, 0.22)' },
+        ],
+      },
+      {
+        piece: 'I',
+        instruction: 'Step 4: Drop I vertically into the well to cash in your setup.',
+        hologramCells: [
+          { x: 0, y: 16, color: 'rgba(0, 220, 255, 0.22)' },
+          { x: 0, y: 17, color: 'rgba(0, 220, 255, 0.22)' },
+          { x: 0, y: 18, color: 'rgba(0, 220, 255, 0.22)' },
+          { x: 0, y: 19, color: 'rgba(0, 220, 255, 0.22)' },
         ],
       },
     ],
