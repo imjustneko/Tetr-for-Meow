@@ -141,6 +141,10 @@ export function useGameInput(
       r.tapAt = performance.now();
     };
 
+    // Track movement key codes for continuous processing
+    const movementDasTimes = new Map<string, number>();
+    const movementArrsHandled = new Map<string, number>();
+
     const onKeyDown = (e: KeyboardEvent) => {
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
         e.preventDefault();
@@ -204,29 +208,16 @@ export function useGameInput(
               clearInterval(softDropInterval.current);
               softDropInterval.current = null;
             }
-          }, 50);
+          }, st.softDropFactor);
         }
         return;
       }
 
-      handleAction(action);
-
+      // For movement, trigger immediately and track for DAS/ARR
       if (action === 'moveLeft' || action === 'moveRight') {
-        clearKeyTimers(e.code);
-        const code = e.code;
-        const dasT = setTimeout(() => {
-          const ai = setInterval(() => {
-            if (heldKeys.current.has(code)) {
-              handleAction(action);
-            } else {
-              clearInterval(ai);
-              arrIntervals.current.delete(code);
-            }
-          }, st.arr === 0 ? 1 : st.arr);
-          arrIntervals.current.set(code, ai);
-          dasTimers.current.delete(code);
-        }, st.das);
-        dasTimers.current.set(code, dasT);
+        handleAction(action);
+        movementDasTimes.set(e.code, performance.now());
+        movementArrsHandled.set(e.code, 0);
       }
     };
 
@@ -256,6 +247,55 @@ export function useGameInput(
         }
         return;
       }
+
+      // Clean up movement tracking
+      if (action === 'moveLeft' || action === 'moveRight') {
+        movementDasTimes.delete(e.code);
+        movementArrsHandled.delete(e.code);
+      }
+    };
+
+    // Process movement continuously via RAF for smooth, uninterruptible input
+    let lastMovementTick = performance.now();
+    const processMovementFrame = (now: number) => {
+      const st = useSettingsStore.getState();
+      const dt = Math.min(now - lastMovementTick, 50); // Cap delta
+      lastMovementTick = now;
+
+      for (const [code, dasStart] of movementDasTimes.entries()) {
+        const action = keyToAction[code];
+        if (!action || !heldKeys.current.has(code)) {
+          movementDasTimes.delete(code);
+          movementArrsHandled.delete(code);
+          continue;
+        }
+
+        const timeSinceDas = now - dasStart;
+        if (timeSinceDas >= st.das) {
+          // After DAS, trigger ARR
+          const arrTime = timeSinceDas - st.das;
+          const arrInterval = st.arr === 0 ? 1 : st.arr;
+          const arrCount = Math.floor(arrTime / arrInterval);
+          const prevCount = movementArrsHandled.get(code) || 0;
+
+          if (arrCount > prevCount) {
+            handleAction(action);
+            movementArrsHandled.set(code, arrCount);
+          }
+        }
+      }
+
+      if (movementDasTimes.size > 0 || heldKeys.current.size > 0) {
+        requestAnimationFrame(processMovementFrame);
+      }
+    };
+
+    let movementRafId: number | null = null;
+    const startMovementProcessor = () => {
+      if (movementRafId === null) {
+        lastMovementTick = performance.now();
+        movementRafId = requestAnimationFrame(processMovementFrame);
+      }
     };
 
     window.addEventListener('keydown', onKeyDown, { capture: true });
@@ -263,15 +303,23 @@ export function useGameInput(
     const onBlur = () => {
       clearHeldKeys();
       clearAll();
+      movementDasTimes.clear();
+      movementArrsHandled.clear();
     };
     window.addEventListener('blur', onBlur);
+
+    // Start movement processor immediately
+    startMovementProcessor();
 
     return () => {
       window.removeEventListener('keydown', onKeyDown, { capture: true });
       window.removeEventListener('keyup', onKeyUp, { capture: true });
       window.removeEventListener('blur', onBlur);
+      if (movementRafId !== null) cancelAnimationFrame(movementRafId);
       clearHeldKeys();
       clearAll();
+      movementDasTimes.clear();
+      movementArrsHandled.clear();
     };
   }, [active, keybinds, handleAction, clearAll, clearHardHold, clearHeldKeys, clearKeyTimers, irsInputRef, sounds]);
 }

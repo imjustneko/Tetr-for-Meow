@@ -112,8 +112,8 @@ interface SettingsState {
 
 export const useSettingsStore = create<SettingsState>((set) => ({
   keybinds: { ...DEFAULT_KEYBINDS },
-  das: 100,
-  arr: 5,
+  das: 133,
+  arr: 16,
   softDropFactor: 20,
   handling: { ...DEFAULT_HANDLING },
   musicVolume: 0.5,
@@ -137,8 +137,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setSfxVolume: (val) => set({ sfxVolume: val }),
   resetHandlingDefaults: () =>
     set({
-      das: 100,
-      arr: 5,
+      das: 133,
+      arr: 16,
       softDropFactor: 20,
       handling: { ...DEFAULT_HANDLING },
     }),
