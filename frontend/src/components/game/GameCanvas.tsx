@@ -11,11 +11,17 @@ interface GameCanvasProps {
   cellSize?: number;
   /** Hide built-in GAME OVER text when a parent overlay handles end state */
   suppressGameOverOverlay?: boolean;
+  guideCells?: Array<{ x: number; y: number; color?: string }>;
 }
 
 const PIECE_TYPE_MAP = ['', 'I', 'O', 'T', 'S', 'Z', 'J', 'L', 'G'];
 
-export function GameCanvas({ gameState, cellSize = 30, suppressGameOverOverlay = false }: GameCanvasProps) {
+export function GameCanvas({
+  gameState,
+  cellSize = 30,
+  suppressGameOverOverlay = false,
+  guideCells = [],
+}: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const width = BOARD_WIDTH * cellSize;
@@ -85,6 +91,18 @@ export function GameCanvas({ gameState, cellSize = 30, suppressGameOverOverlay =
       }
     }
 
+    if (guideCells.length) {
+      for (const cell of guideCells) {
+        const px = cell.x * cellSize;
+        const py = cell.y * cellSize;
+        ctx.fillStyle = cell.color ?? 'rgba(0, 245, 255, 0.2)';
+        ctx.fillRect(px + 2, py + 2, cellSize - 4, cellSize - 4);
+        ctx.strokeStyle = 'rgba(0, 245, 255, 0.85)';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(px + 1.5, py + 1.5, cellSize - 3, cellSize - 3);
+      }
+    }
+
     if (gameState.isGameOver && !suppressGameOverOverlay) {
       ctx.fillStyle = 'rgba(0,0,0,0.7)';
       ctx.fillRect(0, 0, width, height);
@@ -93,7 +111,7 @@ export function GameCanvas({ gameState, cellSize = 30, suppressGameOverOverlay =
       ctx.textAlign = 'center';
       ctx.fillText('GAME OVER', width / 2, height / 2);
     }
-  }, [gameState, cellSize, width, height, suppressGameOverOverlay]);
+  }, [gameState, cellSize, width, height, suppressGameOverOverlay, guideCells]);
 
   return (
     <canvas
