@@ -17,8 +17,7 @@ interface NextQueueProps {
   queue: PieceType[];
 }
 
-export const NextQueue = memo(
-  function NextQueue({ queue }: NextQueueProps) {
+export const NextQueue = memo(function NextQueue({ queue }: NextQueueProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     useEffect(() => {
@@ -89,9 +88,7 @@ export const NextQueue = memo(
         />
       </div>
     );
-  },
-  (prev, next) => prev.queue.length === next.queue.length && prev.queue.every((p, i) => p === next.queue[i])
-);
+});
 
 function drawMiniCell(ctx: CanvasRenderingContext2D, px: number, py: number, color: string, size: number) {
   const pad = 1;

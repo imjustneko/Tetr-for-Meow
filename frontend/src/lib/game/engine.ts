@@ -301,20 +301,23 @@ export class GameEngine {
   }
 
   private spawnPiece(): void {
-    const type = this.state.nextQueue.shift()!;
+    // Always create a new array so React detects the reference change and re-renders previews.
+    const queue = [...this.state.nextQueue];
+    const type = queue.shift()!;
     if (this.mode.type === 'practice' && this.practiceSequence.length > 0) {
       const idx = this.practiceLoop
         ? (this.practiceIndex + NEXT_QUEUE_SIZE - 1) % this.practiceSequence.length
         : Math.min(this.practiceIndex + NEXT_QUEUE_SIZE - 1, this.practiceSequence.length - 1);
-      this.state.nextQueue.push(this.practiceSequence[idx]);
+      queue.push(this.practiceSequence[idx]);
       if (this.practiceLoop) {
         this.practiceIndex = (this.practiceIndex + 1) % this.practiceSequence.length;
       } else {
         this.practiceIndex = Math.min(this.practiceIndex + 1, this.practiceSequence.length - 1);
       }
     } else {
-      this.state.nextQueue.push(this.bag.next());
+      queue.push(this.bag.next());
     }
+    this.state.nextQueue = queue;
     this.spawnSpecificPiece(type);
   }
 
