@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import type { GameState } from '@/lib/game/types';
 
 interface GameHUDProps {
@@ -10,11 +11,11 @@ interface GameHUDProps {
 }
 
 function formatTime(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  const m = Math.floor(s / 60);
+  const s   = Math.floor(ms / 1000);
+  const m   = Math.floor(s / 60);
   const sec = s % 60;
-  const ms2 = Math.floor((ms % 1000) / 10);
-  return `${m}:${String(sec).padStart(2, '0')}.${String(ms2).padStart(2, '0')}`;
+  const cs  = Math.floor((ms % 1000) / 10);
+  return `${m}:${String(sec).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
 }
 
 function calcPPS(state: GameState): string {
@@ -23,74 +24,63 @@ function calcPPS(state: GameState): string {
   return (state.piecesPlaced / secs).toFixed(2);
 }
 
-export function GameHUD({ gameState, mode, targetLines, timeLimit }: GameHUDProps) {
+export const GameHUD = memo(function GameHUD({ gameState, mode, targetLines, timeLimit }: GameHUDProps) {
   const timeLeft = timeLimit ? Math.max(0, timeLimit - gameState.gameTime) : null;
 
   return (
-    <div className="flex w-[7.5rem] shrink-0 flex-col gap-2 border border-white/10 bg-black/30 p-2 backdrop-blur-sm sm:w-[8.5rem] sm:p-3">
-      <StatBox label="Score" value={gameState.score.toLocaleString()} highlight />
+    <div className="w-[80px] shrink-0 border border-white/10 bg-black/40 sm:w-[88px]">
+      <Stat label="Score" value={gameState.score.toLocaleString()} accent />
 
       {mode === 'sprint' && targetLines ? (
-        <StatBox label="Lines" value={`${gameState.lines} / ${targetLines}`} />
+        <Stat label="Lines" value={`${gameState.lines}/${targetLines}`} />
       ) : null}
       {mode === 'ultra' && timeLeft !== null ? (
-        <StatBox label="Time Left" value={formatTime(timeLeft)} highlight={timeLeft < 30000} />
+        <Stat label="Left" value={formatTime(timeLeft)} accent={timeLeft < 30000} />
       ) : null}
-      {mode === 'solo' ? <StatBox label="Lines" value={String(gameState.lines)} /> : null}
+      {mode === 'solo' ? <Stat label="Lines" value={String(gameState.lines)} /> : null}
 
-      <StatBox label="Level" value={String(gameState.level)} />
-      <StatBox label="Time" value={formatTime(gameState.gameTime)} />
-      <StatBox label="PPS" value={calcPPS(gameState)} />
+      <Stat label="Level" value={String(gameState.level)} />
+      <Stat label="Time"  value={formatTime(gameState.gameTime)} />
+      <Stat label="PPS"   value={calcPPS(gameState)} />
 
       {gameState.combo > 0 ? (
-        <div className="min-h-[1.75rem] text-center">
-          <span className="text-lg font-black text-yellow-400">{gameState.combo}x COMBO</span>
+        <div className="border-t border-white/5 px-1.5 py-1 text-center">
+          <span className="text-sm font-black text-yellow-400 tabular-nums">{gameState.combo}✕</span>
+          <div className="text-[0.55rem] uppercase tracking-widest text-yellow-600">combo</div>
         </div>
       ) : null}
 
       {gameState.isBackToBack ? (
-        <div className="text-center">
-          <span className="text-xs font-bold text-cyan-400">BACK-TO-BACK</span>
+        <div className="border-t border-white/5 px-1.5 py-1 text-center">
+          <span className="text-[0.6rem] font-black uppercase tracking-wide text-cyan-400">B2B</span>
         </div>
       ) : null}
 
       {gameState.lastClear && gameState.lastClear.linesCleared > 0 ? (
-        <div className="text-center text-xs font-semibold uppercase text-zinc-400">
+        <div className="border-t border-white/5 px-1 py-1 text-center text-[0.55rem] font-semibold uppercase leading-tight tracking-wide text-zinc-400">
           {gameState.lastClear.clearType.replace(/([A-Z])/g, ' $1').trim()}
           {gameState.lastClear.isPerfectClear ? (
-            <div className="font-black text-yellow-300">PERFECT CLEAR!</div>
+            <div className="mt-0.5 font-black text-yellow-300">PC!</div>
           ) : null}
         </div>
       ) : null}
 
       {gameState.garbageQueue > 0 ? (
-        <div className="rounded border border-red-500/30 bg-red-900/30 px-2 py-1 text-center">
-          <span className="text-sm font-bold text-red-400">⚠ {gameState.garbageQueue} incoming</span>
+        <div className="border-t border-red-900/40 bg-red-950/30 px-1.5 py-1 text-center">
+          <span className="text-xs font-bold text-red-400">⚠ {gameState.garbageQueue}</span>
         </div>
       ) : null}
     </div>
   );
-}
+});
 
-function StatBox({
-  label,
-  value,
-  highlight = false,
-}: {
-  label: string;
-  value: string;
-  highlight?: boolean;
-}) {
+function Stat({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className="min-h-[3.25rem] border border-white/10 bg-black/25 px-2 py-1.5 text-center sm:px-3 sm:py-2">
-      <div
-        className={`min-h-[1.5rem] min-w-[6ch] font-mono text-base font-black tabular-nums leading-tight sm:text-lg ${
-          highlight ? 'text-cyan-400' : 'text-white'
-        }`}
-      >
+    <div className="border-b border-white/5 px-2 py-1.5 text-center last:border-0">
+      <div className={`min-w-[5ch] font-mono text-sm font-black tabular-nums sm:text-base ${accent ? 'text-cyan-400' : 'text-zinc-100'}`}>
         {value}
       </div>
-      <div className="text-[0.65rem] uppercase tracking-wider text-zinc-500 sm:text-xs">{label}</div>
+      <div className="text-[0.55rem] uppercase tracking-widest text-zinc-600">{label}</div>
     </div>
   );
 }

@@ -2,14 +2,13 @@
 
 import { useLayoutEffect, useRef } from 'react';
 import type { GameState } from '@/lib/game/types';
-import { BOARD_WIDTH, BOARD_HEIGHT, HIDDEN_ROWS, PIECE_COLORS, PIECE_GHOST_COLORS } from '@/lib/game/constants';
+import { BOARD_WIDTH, BOARD_HEIGHT, HIDDEN_ROWS, PIECE_COLORS } from '@/lib/game/constants';
 import { getGhostPosition } from '@/lib/game/board';
 import { getPieceMatrix } from '@/lib/game/tetrominos';
 
 interface GameCanvasProps {
   gameState: GameState;
   cellSize?: number;
-  /** Hide built-in GAME OVER text when a parent overlay handles end state */
   suppressGameOverOverlay?: boolean;
   guideCells?: Array<{ x: number; y: number; color?: string }>;
 }
@@ -33,10 +32,15 @@ export function GameCanvas({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.fillStyle = '#0d0d1a';
+    // ── Background: subtle top-to-bottom gradient ─────────────────
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+    bgGrad.addColorStop(0, '#0f0f1e');
+    bgGrad.addColorStop(1, '#090912');
+    ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, width, height);
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+    // ── Grid lines ────────────────────────────────────────────────
+    ctx.strokeStyle = 'rgba(255,255,255,0.045)';
     ctx.lineWidth = 0.5;
     for (let x = 0; x <= BOARD_WIDTH; x++) {
       ctx.beginPath();
@@ -51,6 +55,7 @@ export function GameCanvas({
       ctx.stroke();
     }
 
+    // ── Locked board cells ────────────────────────────────────────
     for (let row = 0; row < BOARD_HEIGHT; row++) {
       for (let col = 0; col < BOARD_WIDTH; col++) {
         const cell = gameState.board[row + HIDDEN_ROWS]?.[col] ?? 0;
@@ -60,11 +65,13 @@ export function GameCanvas({
       }
     }
 
+    // ── Ghost + active piece ──────────────────────────────────────
     if (gameState.activePiece) {
       const ghost = getGhostPosition(gameState.board, gameState.activePiece);
       const matrix = getPieceMatrix(gameState.activePiece.type, gameState.activePiece.rotation);
-      const ghostColor = PIECE_GHOST_COLORS[gameState.activePiece.type] ?? 'rgba(128,128,128,0.2)';
+      const pieceColor = PIECE_COLORS[gameState.activePiece.type];
 
+      // Ghost — Tetr.io style: stroke only, no fill
       for (let row = 0; row < 4; row++) {
         for (let col = 0; col < 4; col++) {
           if (matrix[row][col] === 0) continue;
@@ -72,12 +79,12 @@ export function GameCanvas({
           const boardY = ghost.y + row;
           const viewY = boardY - HIDDEN_ROWS;
           if (viewY >= 0 && viewY < BOARD_HEIGHT) {
-            drawCellGhost(ctx, boardX, viewY, ghostColor, cellSize);
+            drawCellGhost(ctx, boardX, viewY, pieceColor, cellSize);
           }
         }
       }
 
-      const activeColor = PIECE_COLORS[gameState.activePiece.type];
+      // Active piece (drawn on top of ghost)
       for (let row = 0; row < 4; row++) {
         for (let col = 0; col < 4; col++) {
           if (matrix[row][col] === 0) continue;
@@ -85,29 +92,31 @@ export function GameCanvas({
           const boardY = gameState.activePiece.position.y + row;
           const viewY = boardY - HIDDEN_ROWS;
           if (viewY >= 0 && viewY < BOARD_HEIGHT) {
-            drawCell(ctx, boardX, viewY, activeColor, cellSize);
+            drawCell(ctx, boardX, viewY, pieceColor, cellSize);
           }
         }
       }
     }
 
+    // ── Guide cells (training mode) ───────────────────────────────
     if (guideCells.length) {
       for (const cell of guideCells) {
         const px = cell.x * cellSize;
         const py = cell.y * cellSize;
-        ctx.fillStyle = cell.color ?? 'rgba(0, 245, 255, 0.2)';
+        ctx.fillStyle = cell.color ?? 'rgba(0, 245, 255, 0.18)';
         ctx.fillRect(px + 2, py + 2, cellSize - 4, cellSize - 4);
-        ctx.strokeStyle = 'rgba(0, 245, 255, 0.85)';
+        ctx.strokeStyle = 'rgba(0, 245, 255, 0.8)';
         ctx.lineWidth = 1.5;
         ctx.strokeRect(px + 1.5, py + 1.5, cellSize - 3, cellSize - 3);
       }
     }
 
+    // ── Game Over overlay ─────────────────────────────────────────
     if (gameState.isGameOver && !suppressGameOverOverlay) {
-      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillStyle = 'rgba(0,0,0,0.72)';
       ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = '#ff4444';
-      ctx.font = `bold ${cellSize}px monospace`;
+      ctx.fillStyle = '#ff4455';
+      ctx.font = `bold ${Math.round(cellSize * 0.95)}px monospace`;
       ctx.textAlign = 'center';
       ctx.fillText('GAME OVER', width / 2, height / 2);
     }
@@ -118,6 +127,7 @@ export function GameCanvas({
       ref={canvasRef}
       width={width}
       height={height}
+      className="board-glow"
       style={{
         imageRendering: 'auto',
         display: 'block',
@@ -125,34 +135,43 @@ export function GameCanvas({
         height,
         transform: 'translateZ(0)',
       }}
-      className="border border-white/20 bg-black/50 shadow-[inset_0_0_40px_rgba(0,0,0,0.35)]"
     />
   );
 }
+
+// ── Rendering helpers ─────────────────────────────────────────────────────────
 
 function drawCell(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, size: number) {
   const px = x * size;
   const py = y * size;
   const pad = 1;
+  const inner = size - pad * 2;
 
   ctx.fillStyle = color;
-  ctx.fillRect(px + pad, py + pad, size - pad * 2, size - pad * 2);
+  ctx.fillRect(px + pad, py + pad, inner, inner);
 
-  ctx.fillStyle = 'rgba(255,255,255,0.25)';
-  ctx.fillRect(px + pad, py + pad, size - pad * 2, 3);
-  ctx.fillRect(px + pad, py + pad, 3, size - pad * 2);
+  // Top highlight — brightest (2 px)
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.fillRect(px + pad, py + pad, inner, 2);
+  // Left highlight — dimmer (2 px)
+  ctx.fillStyle = 'rgba(255,255,255,0.2)';
+  ctx.fillRect(px + pad, py + pad + 2, 2, inner - 2);
 
+  // Bottom shadow (2 px)
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(px + pad, py + size - pad - 2, inner, 2);
+  // Right shadow (2 px)
   ctx.fillStyle = 'rgba(0,0,0,0.3)';
-  ctx.fillRect(px + pad, py + size - pad - 3, size - pad * 2, 3);
-  ctx.fillRect(px + size - pad - 3, py + pad, 3, size - pad * 2);
+  ctx.fillRect(px + size - pad - 2, py + pad + 2, 2, inner - 4);
 }
 
 function drawCellGhost(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, size: number) {
   const px = x * size;
   const py = y * size;
-  ctx.fillStyle = color;
-  ctx.fillRect(px + 1, py + 1, size - 2, size - 2);
-  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(px + 1, py + 1, size - 2, size - 2);
+  ctx.save();
+  ctx.globalAlpha = 0.38;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(px + 1.5, py + 1.5, size - 3, size - 3);
+  ctx.restore();
 }
