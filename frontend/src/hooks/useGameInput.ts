@@ -64,6 +64,14 @@ export function useGameInput(
           engine.moveRight();
           sounds?.onMove?.();
           break;
+        case 'sonicMoveLeft':
+          engine.sonicMoveLeft();
+          sounds?.onMove?.();
+          break;
+        case 'sonicMoveRight':
+          engine.sonicMoveRight();
+          sounds?.onMove?.();
+          break;
         case 'softDrop':
           engine.softDrop();
           break;
@@ -188,9 +196,22 @@ export function useGameInput(
 
       // For movement, trigger immediately and track for DAS/ARR
       if (action === 'moveLeft' || action === 'moveRight') {
+        const st = useSettingsStore.getState();
+
+        // Cancel opposite direction's DAS if configured
+        if (st.handling.cancelDASOnDirectionChange) {
+          for (const [code] of movementDasTimes.entries()) {
+            if (keyToAction[code] !== action) {
+              movementDasTimes.delete(code);
+              movementDasFired.delete(code);
+            }
+          }
+        }
+
         handleAction(action);
         movementDasTimes.set(e.code, performance.now());
         movementDasFired.delete(e.code);
+        startMovementProcessor();
       }
     };
 
@@ -220,18 +241,31 @@ export function useGameInput(
         return;
       }
 
-      // Clean up movement tracking
+      // Clean up movement tracking + DCD
       if (action === 'moveLeft' || action === 'moveRight') {
         movementDasTimes.delete(e.code);
         movementDasFired.delete(e.code);
+
+        // DCD: after releasing a direction, delay DAS charging on the opposite key
+        const st = useSettingsStore.getState();
+        if (st.handling.dcd > 0) {
+          const oppositeAction = action === 'moveLeft' ? 'moveRight' : 'moveLeft';
+          for (const [code] of movementDasTimes.entries()) {
+            if (keyToAction[code] === oppositeAction) {
+              // Reset DAS start so it fires `dcd` ms from now
+              // (now - dasStart >= das) fires when dasStart = now + dcd - das
+              movementDasTimes.set(code, performance.now() + st.handling.dcd - st.das);
+              movementDasFired.delete(code);
+              break;
+            }
+          }
+        }
       }
     };
 
     // Process movement continuously via RAF for smooth, uninterruptible input
-    let lastMovementTick = performance.now();
     const processMovementFrame = (now: number) => {
       const st = useSettingsStore.getState();
-      lastMovementTick = now;
 
       for (const [code, dasStart] of movementDasTimes.entries()) {
         const action = keyToAction[code];
@@ -244,11 +278,15 @@ export function useGameInput(
         const timeSinceDas = now - dasStart;
         if (timeSinceDas >= st.das) {
           if (!movementDasFired.has(code)) {
-            // First time crossing DAS threshold - fire immediately
-            handleAction(action);
+            // DAS just expired — sonic move if ARR=0, else step move
+            if (st.arr === 0) {
+              handleAction(action === 'moveLeft' ? 'sonicMoveLeft' : 'sonicMoveRight');
+            } else {
+              handleAction(action);
+            }
             movementDasFired.set(code, now);
-          } else {
-            // After first DAS fire, check ARR interval
+          } else if (st.arr > 0) {
+            // ARR interval (skipped when ARR=0, piece is already at the wall)
             const lastFire = movementDasFired.get(code)!;
             if (now - lastFire >= st.arr) {
               handleAction(action);
@@ -259,14 +297,15 @@ export function useGameInput(
       }
 
       if (movementDasTimes.size > 0) {
-        requestAnimationFrame(processMovementFrame);
+        movementRafId = requestAnimationFrame(processMovementFrame);
+      } else {
+        movementRafId = null;
       }
     };
 
     let movementRafId: number | null = null;
     const startMovementProcessor = () => {
       if (movementRafId === null) {
-        lastMovementTick = performance.now();
         movementRafId = requestAnimationFrame(processMovementFrame);
       }
     };
@@ -284,9 +323,6 @@ export function useGameInput(
       movementDasFired.clear();
     };
     window.addEventListener('blur', onBlur);
-
-    // Start movement processor immediately
-    startMovementProcessor();
 
     return () => {
       window.removeEventListener('keydown', onKeyDown, { capture: true });

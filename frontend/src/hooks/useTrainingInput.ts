@@ -66,6 +66,7 @@ export function useTrainingInput(
         handleAction(action);
         movementDasTimes.set(e.code, performance.now());
         movementDasFired.delete(e.code);
+        startMovementProcessor();
         return;
       }
       
@@ -102,10 +103,7 @@ export function useTrainingInput(
     };
 
     // Process movement continuously via RAF for smooth, uninterruptible input
-    let lastMovementTick = performance.now();
     const processMovementFrame = (now: number) => {
-      lastMovementTick = now;
-
       for (const [code, dasStart] of movementDasTimes.entries()) {
         const action = keyToAction[code];
         if (!action || !heldKeys.current.has(code)) {
@@ -117,13 +115,11 @@ export function useTrainingInput(
         const timeSinceDas = now - dasStart;
         if (timeSinceDas >= das) {
           if (!movementDasFired.has(code)) {
-            // First time crossing DAS threshold - fire immediately
             handleAction(action);
             movementDasFired.set(code, now);
           } else {
-            // After first DAS fire, check ARR interval
             const lastFire = movementDasFired.get(code)!;
-            if (now - lastFire >= arr) {
+            if (arr === 0 || now - lastFire >= arr) {
               handleAction(action);
               movementDasFired.set(code, now);
             }
@@ -132,14 +128,15 @@ export function useTrainingInput(
       }
 
       if (movementDasTimes.size > 0) {
-        requestAnimationFrame(processMovementFrame);
+        movementRafId = requestAnimationFrame(processMovementFrame);
+      } else {
+        movementRafId = null;
       }
     };
 
     let movementRafId: number | null = null;
     const startMovementProcessor = () => {
       if (movementRafId === null) {
-        lastMovementTick = performance.now();
         movementRafId = requestAnimationFrame(processMovementFrame);
       }
     };
@@ -157,7 +154,6 @@ export function useTrainingInput(
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', onBlur);
-    startMovementProcessor();
     
     return () => {
       window.removeEventListener('keydown', onKeyDown);

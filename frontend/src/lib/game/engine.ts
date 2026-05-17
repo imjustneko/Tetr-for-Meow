@@ -178,6 +178,42 @@ export class GameEngine {
     }
   }
 
+  /** Slide all the way to the left wall (ARR=0 instant movement). */
+  sonicMoveLeft(): void {
+    const { activePiece, board } = this.state;
+    if (!activePiece || this.state.isGameOver) return;
+    let cur = activePiece;
+    let moved = false;
+    while (isValidPosition(board, cur, -1, 0)) {
+      cur = { ...cur, position: { ...cur.position, x: cur.position.x - 1 } };
+      moved = true;
+    }
+    if (moved) {
+      this.state.activePiece = cur;
+      this.lastMoveWasRotation = false;
+      this.resetLockDelayIfOnGround();
+      this.onStateChange({ ...this.state });
+    }
+  }
+
+  /** Slide all the way to the right wall (ARR=0 instant movement). */
+  sonicMoveRight(): void {
+    const { activePiece, board } = this.state;
+    if (!activePiece || this.state.isGameOver) return;
+    let cur = activePiece;
+    let moved = false;
+    while (isValidPosition(board, cur, 1, 0)) {
+      cur = { ...cur, position: { ...cur.position, x: cur.position.x + 1 } };
+      moved = true;
+    }
+    if (moved) {
+      this.state.activePiece = cur;
+      this.lastMoveWasRotation = false;
+      this.resetLockDelayIfOnGround();
+      this.onStateChange({ ...this.state });
+    }
+  }
+
   private softDropStep(): boolean {
     const { activePiece, board } = this.state;
     if (!activePiece || this.state.isGameOver) return false;
