@@ -37,6 +37,10 @@ export function useGameInput(
   sounds?: InputSoundCallbacks
 ) {
   const keybinds = useSettingsStore((s) => s.keybinds);
+  // Store sounds in a ref so handleAction/useEffect don't re-run on every render.
+  // (useGameSounds returns new function references each render, which would kill the RAF loop.)
+  const soundsRef = useRef(sounds);
+  soundsRef.current = sounds;
 
   const hardHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heldKeys = useRef<Set<string>>(new Set());
@@ -55,22 +59,23 @@ export function useGameInput(
     (action: string) => {
       const engine = engineRef.current;
       if (!engine) return;
+      const snd = soundsRef.current;
       switch (action) {
         case 'moveLeft':
           engine.moveLeft();
-          sounds?.onMove?.();
+          snd?.onMove?.();
           break;
         case 'moveRight':
           engine.moveRight();
-          sounds?.onMove?.();
+          snd?.onMove?.();
           break;
         case 'sonicMoveLeft':
           engine.sonicMoveLeft();
-          sounds?.onMove?.();
+          snd?.onMove?.();
           break;
         case 'sonicMoveRight':
           engine.sonicMoveRight();
-          sounds?.onMove?.();
+          snd?.onMove?.();
           break;
         case 'softDrop':
           engine.softDrop();
@@ -80,29 +85,29 @@ export function useGameInput(
           break;
         case 'hardDrop':
           engine.hardDrop();
-          sounds?.onHardDrop?.();
+          snd?.onHardDrop?.();
           break;
         case 'rotateClockwise':
           engine.rotateClockwise();
-          sounds?.onRotate?.();
+          snd?.onRotate?.();
           break;
         case 'rotateCounter':
           engine.rotateCounter();
-          sounds?.onRotate?.();
+          snd?.onRotate?.();
           break;
         case 'rotate180':
           engine.rotate180();
-          sounds?.onRotate?.();
+          snd?.onRotate?.();
           break;
         case 'hold':
           engine.hold();
-          sounds?.onHold?.();
+          snd?.onHold?.();
           break;
         default:
           break;
       }
     },
-    [engineRef, sounds]
+    [engineRef]
   );
 
   useEffect(() => {
@@ -338,5 +343,5 @@ export function useGameInput(
       movementDasTimes.clear();
       movementDasFired.clear();
     };
-  }, [active, keybinds, handleAction, clearHardHold, clearHeldKeys, irsInputRef, sounds]);
+  }, [active, keybinds, handleAction, clearHardHold, clearHeldKeys, irsInputRef]);
 }
