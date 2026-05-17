@@ -31,6 +31,24 @@ function msToFrames(ms: number): number {
   return Math.max(0, Math.round((ms / 1000) * 60));
 }
 
+function formatKeyCode(code: string): string {
+  const map: Record<string, string> = {
+    ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓',
+    Space: 'Space',
+    ShiftLeft: 'L-Shift', ShiftRight: 'R-Shift',
+    ControlLeft: 'L-Ctrl', ControlRight: 'R-Ctrl',
+    AltLeft: 'L-Alt', AltRight: 'R-Alt',
+    CapsLock: 'Caps',
+    Enter: 'Enter', Backspace: 'Bksp', Tab: 'Tab', Escape: 'Esc',
+  };
+  if (map[code]) return map[code];
+  if (code.startsWith('Key')) return code.slice(3);
+  if (code.startsWith('Digit')) return code.slice(5);
+  if (code.startsWith('Numpad')) return `Num${code.slice(6)}`;
+  if (code.startsWith('F') && !isNaN(Number(code.slice(1)))) return code;
+  return code;
+}
+
 export default function SettingsPage() {
   const { isAuthenticated, isLoading } = useAuthStore();
   const router = useRouter();
@@ -269,7 +287,7 @@ export default function SettingsPage() {
                       : 'border-white/10 bg-black/40 text-white hover:border-cyan-500/40'
                   }`}
                 >
-                  {rebinding === action ? 'Press key…' : keybinds[action]}
+                  {rebinding === action ? 'Press key…' : formatKeyCode(keybinds[action])}
                 </button>
               </div>
             ))}

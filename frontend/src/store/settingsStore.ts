@@ -27,7 +27,7 @@ export const DEFAULT_HANDLING: HandlingConfig = {
   preventAccidentalHardDrop: false,
   cancelDASOnDirectionChange: false,
   preferSoftDropOverMovement: true,
-  irs: 'tap',
+  irs: 'hold',
 };
 
 export const DEFAULT_KEYBINDS: Keybinds = {
@@ -38,7 +38,7 @@ export const DEFAULT_KEYBINDS: Keybinds = {
   rotateClockwise: 'ArrowUp',
   rotateCounter: 'KeyZ',
   rotate180: 'KeyA',
-  hold: 'KeyC',
+  hold: 'ShiftLeft',
 };
 
 function parseHandling(raw: unknown): HandlingConfig {
@@ -113,7 +113,7 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>((set) => ({
   keybinds: { ...DEFAULT_KEYBINDS },
   das: 133,
-  arr: 16,
+  arr: 10,
   softDropFactor: 20,
   handling: { ...DEFAULT_HANDLING },
   musicVolume: 0.5,
@@ -138,7 +138,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   resetHandlingDefaults: () =>
     set({
       das: 133,
-      arr: 16,
+      arr: 10,
       softDropFactor: 20,
       handling: { ...DEFAULT_HANDLING },
     }),

@@ -55,7 +55,7 @@ export function useTrainingInput(
     const movementDasFired = new Map<string, number>(); // Track when DAS expired for each key
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+      if (keyToAction[e.code]) e.preventDefault();
       const action = keyToAction[e.code];
       if (!action) return;
       if (heldKeys.current.has(e.code)) return;
