@@ -80,6 +80,78 @@ body {
   animation: glow-pulse 3.5s ease-in-out infinite;
 }
 
+/* ── Line-clear flash overlay ── */
+@keyframes clear-flash-anim {
+  0%   { opacity: 1; }
+  60%  { opacity: 0.4; }
+  100% { opacity: 0; }
+}
+.clear-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  border-radius: inherit;
+  animation: clear-flash-anim 0.18s ease-out forwards;
+}
+.clear-flash-1 { background: rgba(255,255,255,0.22); }
+.clear-flash-2 { background: rgba(255,255,255,0.42); animation-duration: 0.2s; }
+.clear-flash-3 { background: rgba(255,255,255,0.65); animation-duration: 0.24s; }
+
+/* ── Board shake (Tetr.IO style) ── */
+@keyframes board-shake-sm {
+  0%, 100% { transform: translate(0,0); }
+  18%  { transform: translate(-3px,-1px); }
+  36%  { transform: translate(3px, 1px); }
+  54%  { transform: translate(-2px, 0px); }
+  72%  { transform: translate(2px, 1px); }
+  90%  { transform: translate(-1px, 0px); }
+}
+@keyframes board-shake-md {
+  0%, 100% { transform: translate(0,0); }
+  12%  { transform: translate(-5px,-2px); }
+  24%  { transform: translate(5px, 2px); }
+  36%  { transform: translate(-4px,-1px); }
+  50%  { transform: translate(4px, 2px); }
+  64%  { transform: translate(-2px,-1px); }
+  78%  { transform: translate(2px, 1px); }
+  90%  { transform: translate(-1px, 0px); }
+}
+.board-shake-sm { animation: board-shake-sm 0.22s ease-out; }
+.board-shake-md { animation: board-shake-md 0.32s ease-out; }
+
+/* ── Top-out flash (game over entrance) ── */
+@keyframes topout-flash-anim {
+  0%   { opacity: 0; }
+  25%  { opacity: 1; }
+  60%  { opacity: 0.7; }
+  100% { opacity: 0; }
+}
+.topout-flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(255,60,60,0.9) 0%, rgba(180,0,0,0.75) 100%);
+  pointer-events: none;
+  z-index: 20;
+  border-radius: inherit;
+  animation: topout-flash-anim 0.5s ease-out forwards;
+}
+
+/* ── T-spin flash (purple tint) ── */
+@keyframes tspin-flash-anim {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}
+.tspin-flash {
+  position: absolute;
+  inset: 0;
+  background: rgba(160,0,240,0.35);
+  pointer-events: none;
+  z-index: 10;
+  border-radius: inherit;
+  animation: tspin-flash-anim 0.28s ease-out forwards;
+}
+
 /* ── Cell (legacy) ── */
 .cell {
   width: 100%;

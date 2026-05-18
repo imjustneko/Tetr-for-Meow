@@ -6,7 +6,7 @@ class SoundEngine {
   private musicPlaying = false;
   private musicTimer: ReturnType<typeof setTimeout> | null = null;
   private sfxVolume = 0.8;
-  private musicVolume = 0.4;
+  private musicVolume = 0.15;
 
   private getCtx(): AudioContext {
     if (!this.ctx) {

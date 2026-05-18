@@ -1,7 +1,7 @@
 'use client';
 
-import { useLayoutEffect, useRef } from 'react';
-import type { GameState } from '@/lib/game/types';
+import { useLayoutEffect, useRef, useEffect, useState } from 'react';
+import type { GameState, ClearResult } from '@/lib/game/types';
 import { BOARD_WIDTH, BOARD_HEIGHT, HIDDEN_ROWS, PIECE_COLORS } from '@/lib/game/constants';
 import { getGhostPosition } from '@/lib/game/board';
 import { getPieceMatrix } from '@/lib/game/tetrominos';
@@ -15,6 +15,8 @@ interface GameCanvasProps {
 
 const PIECE_TYPE_MAP = ['', 'I', 'O', 'T', 'S', 'Z', 'J', 'L', 'G'];
 
+type FlashKind = 'clear-1' | 'clear-2' | 'clear-3' | 'tspin' | 'topout';
+
 export function GameCanvas({
   gameState,
   cellSize = 30,
@@ -22,24 +24,87 @@ export function GameCanvas({
   guideCells = [],
 }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  // Flash: key changes force re-mount of overlay → re-triggers CSS animation
+  const [flash, setFlash] = useState<{ key: number; kind: FlashKind } | null>(null);
+  // Shake: applied directly to the wrapper div's class list
+  const shakeRef = useRef<boolean>(false);
+
+  const prevClearRef = useRef<ClearResult | null>(null);
+  const prevGameOverRef = useRef(false);
 
   const width = BOARD_WIDTH * cellSize;
   const height = BOARD_HEIGHT * cellSize;
 
+  // ── Line-clear animation ──────────────────────────────────────────────────
+  useEffect(() => {
+    const cur = gameState.lastClear;
+    if (!cur || cur === prevClearRef.current) {
+      prevClearRef.current = cur;
+      return;
+    }
+    prevClearRef.current = cur;
+    if (cur.linesCleared === 0 && !cur.isTSpin) return;
+
+    const now = Date.now();
+    let kind: FlashKind;
+    if (cur.isTSpin) {
+      kind = 'tspin';
+    } else {
+      kind = cur.linesCleared >= 4 ? 'clear-3' : cur.linesCleared >= 2 ? 'clear-2' : 'clear-1';
+    }
+    const strong = cur.linesCleared >= 3 || cur.isTSpin;
+
+    setFlash({ key: now, kind });
+
+    // Trigger shake via DOM class manipulation (avoids React remount)
+    const el = wrapperRef.current;
+    if (el && !shakeRef.current) {
+      shakeRef.current = true;
+      el.classList.remove('board-shake-sm', 'board-shake-md');
+      void el.offsetWidth; // force reflow to restart animation
+      el.classList.add(strong ? 'board-shake-md' : 'board-shake-sm');
+      const shakeDur = strong ? 380 : 260;
+      const ts = setTimeout(() => {
+        el.classList.remove('board-shake-sm', 'board-shake-md');
+        shakeRef.current = false;
+      }, shakeDur);
+      const flashDuration = kind === 'tspin' ? 320 : kind === 'clear-3' ? 280 : kind === 'clear-2' ? 240 : 200;
+      const t1 = setTimeout(() => setFlash(null), flashDuration);
+      return () => { clearTimeout(ts); clearTimeout(t1); };
+    }
+
+    const flashDuration = kind === 'tspin' ? 320 : kind === 'clear-3' ? 280 : kind === 'clear-2' ? 240 : 200;
+    const t1 = setTimeout(() => setFlash(null), flashDuration);
+    return () => clearTimeout(t1);
+  }, [gameState.lastClear]);
+
+  // ── Top-out animation ─────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!prevGameOverRef.current && gameState.isGameOver) {
+      prevGameOverRef.current = true;
+      const key = Date.now();
+      setFlash({ key, kind: 'topout' });
+      const t = setTimeout(() => setFlash(null), 550);
+      return () => clearTimeout(t);
+    }
+    if (!gameState.isGameOver) prevGameOverRef.current = false;
+  }, [gameState.isGameOver]);
+
+  // ── Canvas draw ───────────────────────────────────────────────────────────
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // ── Background: subtle top-to-bottom gradient ─────────────────
     const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
     bgGrad.addColorStop(0, '#0f0f1e');
     bgGrad.addColorStop(1, '#090912');
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, width, height);
 
-    // ── Grid lines ────────────────────────────────────────────────
     ctx.strokeStyle = 'rgba(255,255,255,0.045)';
     ctx.lineWidth = 0.5;
     for (let x = 0; x <= BOARD_WIDTH; x++) {
@@ -55,7 +120,6 @@ export function GameCanvas({
       ctx.stroke();
     }
 
-    // ── Locked board cells ────────────────────────────────────────
     for (let row = 0; row < BOARD_HEIGHT; row++) {
       for (let col = 0; col < BOARD_WIDTH; col++) {
         const cell = gameState.board[row + HIDDEN_ROWS]?.[col] ?? 0;
@@ -65,13 +129,11 @@ export function GameCanvas({
       }
     }
 
-    // ── Ghost + active piece ──────────────────────────────────────
     if (gameState.activePiece) {
       const ghost = getGhostPosition(gameState.board, gameState.activePiece);
       const matrix = getPieceMatrix(gameState.activePiece.type, gameState.activePiece.rotation);
       const pieceColor = PIECE_COLORS[gameState.activePiece.type];
 
-      // Ghost — Tetr.io style: stroke only, no fill
       for (let row = 0; row < 4; row++) {
         for (let col = 0; col < 4; col++) {
           if (matrix[row][col] === 0) continue;
@@ -84,7 +146,6 @@ export function GameCanvas({
         }
       }
 
-      // Active piece (drawn on top of ghost)
       for (let row = 0; row < 4; row++) {
         for (let col = 0; col < 4; col++) {
           if (matrix[row][col] === 0) continue;
@@ -98,7 +159,6 @@ export function GameCanvas({
       }
     }
 
-    // ── Guide cells (training mode) ───────────────────────────────
     if (guideCells.length) {
       for (const cell of guideCells) {
         const px = cell.x * cellSize;
@@ -111,7 +171,6 @@ export function GameCanvas({
       }
     }
 
-    // ── Game Over overlay ─────────────────────────────────────────
     if (gameState.isGameOver && !suppressGameOverOverlay) {
       ctx.fillStyle = 'rgba(0,0,0,0.72)';
       ctx.fillRect(0, 0, width, height);
@@ -123,19 +182,42 @@ export function GameCanvas({
   }, [gameState, cellSize, width, height, suppressGameOverOverlay, guideCells]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      width={width}
-      height={height}
-      className="board-glow"
-      style={{
-        imageRendering: 'auto',
-        display: 'block',
-        width,
-        height,
-        transform: 'translateZ(0)',
-      }}
-    />
+    <div
+      ref={wrapperRef}
+      style={{ position: 'relative', display: 'inline-block', lineHeight: 0 }}
+    >
+      <canvas
+        ref={canvasRef}
+        width={width}
+        height={height}
+        className="board-glow"
+        style={{
+          imageRendering: 'auto',
+          display: 'block',
+          width,
+          height,
+          transform: 'translateZ(0)',
+        }}
+      />
+
+      {/* Line-clear / T-spin flash overlay */}
+      {flash && flash.kind !== 'topout' && (
+        <div
+          key={flash.key}
+          className={
+            flash.kind === 'tspin' ? 'tspin-flash' :
+            flash.kind === 'clear-3' ? 'clear-flash clear-flash-3' :
+            flash.kind === 'clear-2' ? 'clear-flash clear-flash-2' :
+            'clear-flash clear-flash-1'
+          }
+        />
+      )}
+
+      {/* Top-out red flash */}
+      {flash && flash.kind === 'topout' && (
+        <div key={flash.key} className="topout-flash" />
+      )}
+    </div>
   );
 }
 
@@ -150,17 +232,13 @@ function drawCell(ctx: CanvasRenderingContext2D, x: number, y: number, color: st
   ctx.fillStyle = color;
   ctx.fillRect(px + pad, py + pad, inner, inner);
 
-  // Top highlight — brightest (2 px)
   ctx.fillStyle = 'rgba(255,255,255,0.55)';
   ctx.fillRect(px + pad, py + pad, inner, 2);
-  // Left highlight — dimmer (2 px)
   ctx.fillStyle = 'rgba(255,255,255,0.2)';
   ctx.fillRect(px + pad, py + pad + 2, 2, inner - 2);
 
-  // Bottom shadow (2 px)
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
   ctx.fillRect(px + pad, py + size - pad - 2, inner, 2);
-  // Right shadow (2 px)
   ctx.fillStyle = 'rgba(0,0,0,0.3)';
   ctx.fillRect(px + size - pad - 2, py + pad + 2, 2, inner - 4);
 }

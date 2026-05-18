@@ -28,7 +28,7 @@ export function useGameEngine(mode: GameMode, callbacks?: GameEngineCallbacks) {
   const [finalState, setFinalState] = useState<GameState | null>(null);
   const prevLevelRef = useRef(1);
   const sounds = useGameSounds();
-  const { musicEnabled, musicVolume, initAudio } = useAudioStore();
+  const { initAudio } = useAudioStore();
 
   useGameInput(engineRef, isActive, irsInputRef, {
     onMove: sounds.onMove,
@@ -102,16 +102,14 @@ export function useGameEngine(mode: GameMode, callbacks?: GameEngineCallbacks) {
       soundEngine.stopMusic();
     };
 
+    // Stop any ambient music that was playing (e.g. from settings/menu)
+    soundEngine.stopMusic();
+
     engine.start();
     setIsActive(true);
     setIsFinished(false);
     setFinalState(null);
-
-    if (musicEnabled) {
-      soundEngine.setMusicVolume(musicVolume);
-      soundEngine.startMusic();
-    }
-  }, [modeType, targetLines, timeLimit, initAudio, sounds, musicEnabled, musicVolume]);
+  }, [modeType, targetLines, timeLimit, initAudio, sounds]);
 
   const restartGame = useCallback(() => {
     soundEngine.stopMusic();
