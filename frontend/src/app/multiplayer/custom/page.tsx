@@ -16,7 +16,8 @@ export default function CustomRoomPage() {
   const router = useRouter();
   const [step, setStep] = useState<Step>('pick');
   const [joinCode, setJoinCode] = useState('');
-  const [session, setSession] = useState<{ kind: 'create' } | { kind: 'join'; code: string } | null>(null);
+  const [maxPlayers, setMaxPlayers] = useState(2);
+  const [session, setSession] = useState<{ kind: 'create'; maxPlayers: number } | { kind: 'join'; code: string } | null>(null);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) router.push('/login');
@@ -51,12 +52,31 @@ export default function CustomRoomPage() {
           <div className="grid gap-6 md:grid-cols-2">
             <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-6">
               <h2 className="mb-2 text-lg font-bold text-white">Create room</h2>
-              <p className="mb-6 text-sm text-zinc-500">Generate a short code and share it.</p>
+              <p className="mb-4 text-sm text-zinc-500">Generate a short code and share it.</p>
+              <div className="mb-4">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-400">Max players</p>
+                <div className="flex gap-2">
+                  {[2, 3, 4].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setMaxPlayers(n)}
+                      className={`flex-1 rounded-lg border py-2 text-sm font-bold transition-colors ${
+                        maxPlayers === n
+                          ? 'border-cyan-500 bg-cyan-500/20 text-cyan-300'
+                          : 'border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-500'
+                      }`}
+                    >
+                      {n}P
+                    </button>
+                  ))}
+                </div>
+              </div>
               <Button
                 variant="primary"
                 className="w-full"
                 onClick={() => {
-                  setSession({ kind: 'create' });
+                  setSession({ kind: 'create', maxPlayers });
                   setStep('session');
                 }}
               >
@@ -95,6 +115,7 @@ export default function CustomRoomPage() {
             mode="custom"
             startWith={session.kind === 'create' ? 'create' : 'join'}
             joinCode={session.kind === 'join' ? session.code : undefined}
+            maxPlayers={session.kind === 'create' ? session.maxPlayers : undefined}
             currentUserId={user.id}
           />
         ) : null}

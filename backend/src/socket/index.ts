@@ -130,7 +130,7 @@ export function initSocket(io: AuthedIoServer): void {
       socket.emit('public_rooms', getPublicRoomsList());
     });
 
-    socket.on('create_public_room', ({ mode }: { mode?: string }) => {
+    socket.on('create_public_room', ({ mode, maxPlayers }: { mode?: string; maxPlayers?: number }) => {
       const roomCode = generateRoomCode();
       const roomMode = normalizeQueueMode(mode);
       const room: GameRoom = {
@@ -139,6 +139,7 @@ export function initSocket(io: AuthedIoServer): void {
         status: 'waiting',
         roomCode,
         isPublic: true,
+        maxPlayers: Math.min(6, Math.max(2, Math.floor(Number(maxPlayers) || 2))),
         players: [],
         matchResolved: false,
       };
@@ -156,7 +157,7 @@ export function initSocket(io: AuthedIoServer): void {
         if (
           room.mode === queueMode &&
           room.status === 'waiting' &&
-          room.players.length < 2 &&
+          room.players.length < (room.maxPlayers ?? 2) &&
           !room.roomCode
         ) {
           foundRoom = room;
@@ -172,6 +173,7 @@ export function initSocket(io: AuthedIoServer): void {
           id: roomId,
           mode: queueMode,
           status: 'waiting',
+          maxPlayers: 2,
           players: [],
           series:
             queueMode === 'league'
@@ -195,7 +197,7 @@ export function initSocket(io: AuthedIoServer): void {
       void leaveRoom(socket, io);
     });
 
-    socket.on('create_room', ({ mode }: { mode?: string }) => {
+    socket.on('create_room', ({ mode, maxPlayers }: { mode?: string; maxPlayers?: number }) => {
       const roomCode = generateRoomCode();
       const roomMode = normalizeQueueMode(mode);
       const room: GameRoom = {
@@ -203,6 +205,7 @@ export function initSocket(io: AuthedIoServer): void {
         mode: roomMode,
         status: 'waiting',
         roomCode,
+        maxPlayers: Math.min(6, Math.max(2, Math.floor(Number(maxPlayers) || 2))),
         players: [],
         series:
           roomMode === 'league'
@@ -226,7 +229,7 @@ export function initSocket(io: AuthedIoServer): void {
         socket.emit('room_error', { message: 'Room not found' });
         return;
       }
-      if (room.players.length >= 2) {
+      if (room.players.length >= (room.maxPlayers ?? 2)) {
         socket.emit('room_error', { message: 'Room is full' });
         return;
       }
@@ -243,7 +246,13 @@ export function initSocket(io: AuthedIoServer): void {
       if (player) {
         player.ready = true;
         io.to(roomId).emit('room_update', sanitizeRoom(room));
-        if (room.players.length >= 2 && room.players.every((p) => p.ready)) {
+        // Start when ≥2 players all ready (or room is full and everyone is ready)
+        const readyCount = room.players.filter((p) => p.ready).length;
+        const enoughPlayers = room.players.length >= 2;
+        const allReady = room.players.every((p) => p.ready);
+        if (enoughPlayers && allReady) {
+          startCountdown(io, room);
+        } else if (enoughPlayers && readyCount >= 2 && room.players.length === room.maxPlayers) {
           startCountdown(io, room);
         }
       }
@@ -319,15 +328,17 @@ export function initSocket(io: AuthedIoServer): void {
       const player = room.players.find((p) => p.socketId === socket.id);
       if (player && player.alive) {
         player.alive = false;
-        io.to(roomId).emit('player_eliminated', { userId: user.userId });
+        const place = room.players.filter((p) => !p.alive).length;
+        io.to(roomId).emit('player_eliminated', { userId: user.userId, place });
 
         const alivePlayers = room.players.filter((p) => p.alive);
         if (alivePlayers.length <= 1) {
-          const winner = alivePlayers[0] || null;
-          const loser = room.players.find((p) => p.userId === user.userId) || null;
-          if (!winner || !loser) {
+          const winner = alivePlayers[0] ?? null;
+          // For multi-player the "loser" in ELO context is the last eliminated
+          const loser = player;
+          if (!winner) {
             room.status = 'finished';
-            io.to(roomId).emit('game_over', { winner: winner?.userId ?? null });
+            io.to(roomId).emit('game_over', { winner: null });
             return;
           }
           void finishRound(io, room, winner, loser);
@@ -378,7 +389,7 @@ function joinRoom(
   socket.emit('room_joined', { roomId, room: sanitizeRoom(room) });
   io.to(roomId).emit('room_update', sanitizeRoom(room));
 
-  if (room.players.length === 2) {
+  if (room.players.length >= (room.maxPlayers ?? 2)) {
     io.to(roomId).emit('match_found', { roomId });
     broadcastPublicRooms(io);
   } else if (room.isPublic) {
@@ -529,6 +540,7 @@ function sanitizeRoom(room: GameRoom) {
     mode: room.mode,
     status: room.status,
     roomCode: room.roomCode,
+    maxPlayers: room.maxPlayers ?? 2,
     series: room.series
       ? {
           bestOf: room.series.bestOf,

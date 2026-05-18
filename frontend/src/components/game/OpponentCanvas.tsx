@@ -10,6 +10,7 @@ interface OpponentCanvasProps {
   board: Board | number[][] | null;
   cellSize?: number;
   label?: string;
+  eliminated?: boolean;
 }
 
 function normalizeBoard(raw: Board | number[][] | null): CellValue[][] | null {
@@ -17,7 +18,7 @@ function normalizeBoard(raw: Board | number[][] | null): CellValue[][] | null {
   return raw as CellValue[][];
 }
 
-export function OpponentCanvas({ board, cellSize = 18, label = 'Opponent' }: OpponentCanvasProps) {
+export function OpponentCanvas({ board, cellSize = 18, label = 'Opponent', eliminated = false }: OpponentCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const grid = normalizeBoard(board);
 
@@ -64,15 +65,24 @@ export function OpponentCanvas({ board, cellSize = 18, label = 'Opponent' }: Opp
   }, [grid, cellSize, width, height]);
 
   return (
-    <div className="flex flex-col gap-1">
-      <p className="text-[0.65rem] font-bold uppercase tracking-widest text-zinc-500">{label}</p>
-      <canvas
-        ref={canvasRef}
-        width={width}
-        height={height}
-        className="rounded-sm border border-zinc-700"
-        style={{ imageRendering: 'pixelated', display: 'block' }}
-      />
+    <div className="relative flex flex-col gap-1">
+      <p className={`text-[0.65rem] font-bold uppercase tracking-widest ${eliminated ? 'text-red-500 line-through' : 'text-zinc-500'}`}>
+        {label}{eliminated ? ' · OUT' : ''}
+      </p>
+      <div className="relative">
+        <canvas
+          ref={canvasRef}
+          width={width}
+          height={height}
+          className={`rounded-sm border ${eliminated ? 'border-red-800 opacity-40' : 'border-zinc-700'}`}
+          style={{ imageRendering: 'pixelated', display: 'block' }}
+        />
+        {eliminated && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-sm bg-black/60">
+            <span className="text-xs font-bold text-red-400">ELIMINATED</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

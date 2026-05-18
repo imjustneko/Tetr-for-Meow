@@ -396,6 +396,7 @@ export class TrainingEngine {
       combo: this.combo,
       isBackToBack: this.isBackToBack,
       garbageQueue: 0,
+      pendingGarbage: 0,
       isGameOver: this.isGameOver,
       lastClear: null,
       startTime: this.startTime,

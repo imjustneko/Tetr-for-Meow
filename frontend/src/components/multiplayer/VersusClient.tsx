@@ -27,6 +27,7 @@ export type SanitizedRoom = {
   mode: string;
   status: string;
   roomCode?: string;
+  maxPlayers?: number;
   series?: {
     bestOf: number;
     targetWins: number;
@@ -50,17 +51,18 @@ type Props = {
   joinCode?: string;
   currentUserId: string | null;
   isPublic?: boolean;
+  maxPlayers?: number;
 };
 
 const BOARD_SYNC_MS = 120;
 
-export function VersusClient({ mode, startWith, joinCode, currentUserId, isPublic }: Props) {
+export function VersusClient({ mode, startWith, joinCode, currentUserId, isPublic, maxPlayers }: Props) {
   const cellSize = usePlayfieldCellSize();
   const playfieldRef = useRef<HTMLDivElement>(null);
   const [phase, setPhase] = useState<Phase>('idle');
   const [room, setRoom] = useState<SanitizedRoom | null>(null);
   const [count, setCount] = useState<number | null>(null);
-  const [opponentBoard, setOpponentBoard] = useState<number[][] | null>(null);
+  const [opponentBoards, setOpponentBoards] = useState<Map<string, number[][]>>(new Map());
   const [banner, setBanner] = useState<string | null>(null);
   const [roomCodeShown, setRoomCodeShown] = useState<string | null>(null);
   const [winnerId, setWinnerId] = useState<string | null>(null);
@@ -68,8 +70,8 @@ export function VersusClient({ mode, startWith, joinCode, currentUserId, isPubli
   const topOutSent = useRef(false);
   const lastBoardEmit = useRef(0);
   const joinedOnce = useRef(false);
-  const propsRef = useRef({ mode, startWith, joinCode, isPublic });
-  propsRef.current = { mode, startWith, joinCode, isPublic };
+  const propsRef = useRef({ mode, startWith, joinCode, isPublic, maxPlayers });
+  propsRef.current = { mode, startWith, joinCode, isPublic, maxPlayers };
 
   const escOpts = useMemo(
     () => ({
@@ -143,10 +145,11 @@ export function VersusClient({ mode, startWith, joinCode, currentUserId, isPubli
         socket.emit('join_queue', { mode: propsRef.current.mode === 'league' ? 'league' : 'versus' });
         setPhase('queued');
       } else if (sw === 'create') {
+        const mp = propsRef.current.maxPlayers ?? 2;
         if (propsRef.current.isPublic) {
-          socket.emit('create_public_room', { mode: propsRef.current.mode === 'league' ? 'league' : 'versus' });
+          socket.emit('create_public_room', { mode: propsRef.current.mode === 'league' ? 'league' : 'versus', maxPlayers: mp });
         } else {
-          socket.emit('create_room', { mode: 'versus' });
+          socket.emit('create_room', { mode: 'versus', maxPlayers: mp });
         }
       } else if (sw === 'join' && jc?.trim()) {
         socket.emit('join_room', { roomCode: jc.trim().toUpperCase() });
@@ -184,7 +187,7 @@ export function VersusClient({ mode, startWith, joinCode, currentUserId, isPubli
       setCount(null);
       setSeriesBanner(null);
       setPhase('playing');
-      setOpponentBoard(null);
+      setOpponentBoards(new Map());
       topOutSent.current = false;
       startGameRef.current();
     };
@@ -194,8 +197,14 @@ export function VersusClient({ mode, startWith, joinCode, currentUserId, isPubli
       if (n > 0) receiveGarbageRef.current(n);
     };
 
-    const onOppBoard = (p: { board?: number[][] }) => {
-      if (p?.board) setOpponentBoard(p.board);
+    const onOppBoard = (p: { userId?: string; board?: number[][] }) => {
+      if (p?.board && p?.userId) {
+        setOpponentBoards((prev) => {
+          const next = new Map(prev);
+          next.set(p.userId!, p.board!);
+          return next;
+        });
+      }
     };
 
     const onGameOver = (p: {
@@ -296,7 +305,7 @@ export function VersusClient({ mode, startWith, joinCode, currentUserId, isPubli
   }, [isFinished, finalState]);
 
   const me = room?.players.find((p) => p.userId === currentUserId);
-  const opp = room?.players.find((p) => p.userId !== currentUserId);
+  const opponents = room?.players.filter((p) => p.userId !== currentUserId) ?? [];
 
   const setReady = (ready: boolean) => {
     const s = getSocket();
@@ -397,7 +406,7 @@ export function VersusClient({ mode, startWith, joinCode, currentUserId, isPubli
         </div>
       ) : null}
 
-      {room && room.players.length === 2 && room.status === 'waiting' && phase === 'room' ? (
+      {room && room.players.length >= 2 && room.status === 'waiting' && phase === 'room' ? (
         <div className="mb-6 flex flex-wrap gap-3">
           <Button variant="primary" onClick={() => setReady(true)} disabled={!!me?.ready}>
             Ready
@@ -417,16 +426,22 @@ export function VersusClient({ mode, startWith, joinCode, currentUserId, isPubli
             <div className="grid w-full grid-cols-1 items-start justify-items-center gap-4 lg:grid-cols-[auto_minmax(0,auto)_auto] lg:justify-center lg:gap-4">
               <div className="flex w-full max-w-[20rem] flex-col gap-3 lg:max-w-none">
                 <HoldBox heldPiece={gameState.heldPiece} canHold={gameState.canHold} />
-                <OpponentCanvas
-                  board={opponentBoard}
-                  cellSize={Math.max(14, Math.floor(cellSize * 0.62))}
-                  label={opp?.username ?? 'Opponent'}
-                />
+                {opponents.map((opp) => (
+                  <OpponentCanvas
+                    key={opp.userId}
+                    board={opponentBoards.get(opp.userId) ?? null}
+                    cellSize={opponents.length > 2
+                      ? Math.max(8, Math.floor(cellSize * 0.38))
+                      : Math.max(14, Math.floor(cellSize * 0.62))}
+                    label={opp.username}
+                    eliminated={!opp.alive}
+                  />
+                ))}
               </div>
 
               <div className="flex w-full max-w-[min(100vw-1rem,28rem)] flex-col items-center gap-3 sm:max-w-none">
                 <div className="relative flex w-max max-w-full shrink-0 flex-row items-stretch overflow-hidden rounded-sm shadow-lg shadow-black/30">
-                  <GarbageMeter lines={gameState.garbageQueue} heightPx={BOARD_HEIGHT * cellSize} />
+                  <GarbageMeter lines={gameState.garbageQueue} pending={gameState.pendingGarbage} heightPx={BOARD_HEIGHT * cellSize} />
                   <GameCanvas
                     gameState={gameState}
                     cellSize={cellSize}

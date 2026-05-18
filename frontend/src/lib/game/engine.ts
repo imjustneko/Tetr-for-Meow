@@ -62,6 +62,7 @@ export class GameEngine {
       combo: -1,
       isBackToBack: false,
       garbageQueue: 0,
+      pendingGarbage: 0,
       isGameOver: false,
       lastClear: null,
       startTime: typeof performance !== 'undefined' ? performance.now() : Date.now(),
@@ -127,7 +128,8 @@ export class GameEngine {
   }
 
   receiveGarbage(lines: number): void {
-    this.state.garbageQueue += lines;
+    // Goes to pending — can be cancelled by clearing lines before lock
+    this.state.pendingGarbage += lines;
     this.onStateChange({ ...this.state });
   }
 
@@ -358,26 +360,29 @@ export class GameEngine {
     const previousClearRef = this.state.lastClear;
     const { isTSpin, isMiniTSpin } = detectTSpin(board, activePiece, this.lastMoveWasRotation);
 
+    // 1. Lock piece and clear lines
     const newBoard = lockPiece(board, activePiece);
     this.state.piecesPlaced++;
+    const { board: clearedBoard, linesCleared } = clearLines(newBoard);
+    this.state.board = clearedBoard;
 
+    // 2. Process clear → returns net attack after TETR.IO counter logic
+    const netAttack = this.processClear(linesCleared, isTSpin, isMiniTSpin);
+
+    // 3. Send net attack (already reduced by counter inside processClear)
+    if (netAttack > 0) this.onGarbageSend(netAttack);
+
+    // 4. Apply any leftover pending garbage (that wasn't countered) to the board
     if (this.state.garbageQueue > 0) {
-      const boardWithGarbage = addGarbage(newBoard, this.state.garbageQueue);
+      this.state.board = addGarbage(this.state.board, this.state.garbageQueue);
       this.state.garbageQueue = 0;
-      const { board: clearedBoard, linesCleared } = clearLines(boardWithGarbage);
-      this.state.board = clearedBoard;
-      this.processClear(linesCleared, isTSpin, isMiniTSpin);
-    } else {
-      const { board: clearedBoard, linesCleared } = clearLines(newBoard);
-      this.state.board = clearedBoard;
-      this.processClear(linesCleared, isTSpin, isMiniTSpin);
     }
 
     this.state.activePiece = null;
     this.state.canHold = true;
     this.lastMoveWasRotation = false;
 
-    // TETR.IO-style: if the stack reaches hidden rows after placement/clears, end immediately.
+    // TETR.IO-style top-out check
     if (isTopOut(this.state.board)) {
       this.state.isGameOver = true;
       this.onGameOver({ ...this.state });
@@ -393,11 +398,15 @@ export class GameEngine {
     this.onStateChange({ ...this.state });
   }
 
-  private processClear(linesCleared: number, isTSpin: boolean, isMiniTSpin: boolean): void {
+  // Returns net attack after TETR.IO counter mechanic (does NOT call onGarbageSend).
+  private processClear(linesCleared: number, isTSpin: boolean, isMiniTSpin: boolean): number {
     if (linesCleared === 0 && !isTSpin) {
       this.state.combo = -1;
+      // No clear: all pending garbage converts to board queue now
+      this.state.garbageQueue += this.state.pendingGarbage;
+      this.state.pendingGarbage = 0;
       this.onStateChange({ ...this.state });
-      return;
+      return 0;
     }
 
     let clearType: ClearType = 'none';
@@ -444,13 +453,21 @@ export class GameEngine {
       typeof ATTACK_TABLE[attackKey] === 'number' ? (ATTACK_TABLE[attackKey] as number) : 0;
     if (isBackToBack) attack += ATTACK_TABLE.backToBack;
     const comboIdx = Math.max(0, Math.min(this.state.combo, ATTACK_TABLE.combo.length - 1));
-    const comboAttack = ATTACK_TABLE.combo[comboIdx] ?? 0;
-    attack += comboAttack;
+    attack += ATTACK_TABLE.combo[comboIdx] ?? 0;
     if (isPC) attack += ATTACK_TABLE.perfectClear;
 
     this.state.score += totalScore;
     this.state.lines += linesCleared;
     this.state.level = Math.floor(this.state.lines / 10) + 1;
+
+    // TETR.IO counter: attack cancels pending garbage first
+    const pending = this.state.pendingGarbage;
+    const cancel = Math.min(pending, attack);
+    this.state.pendingGarbage = pending - cancel;
+    const netAttack = attack - cancel;
+    // Any uncancelled pending garbage becomes queued (applied to board this lock)
+    this.state.garbageQueue += this.state.pendingGarbage;
+    this.state.pendingGarbage = 0;
 
     const clearResult: ClearResult = {
       linesCleared,
@@ -459,18 +476,14 @@ export class GameEngine {
       isMiniTSpin,
       isBackToBack,
       isPerfectClear: isPC,
-      attack,
+      attack: netAttack,
       score: totalScore,
       combo: this.state.combo,
     };
 
     this.state.lastClear = clearResult;
-
-    if (attack > 0) {
-      this.onGarbageSend(attack);
-    }
-
     this.onClear(clearResult);
+    return netAttack;
   }
 
   private checkModeCompletion(): boolean {

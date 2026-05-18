@@ -51,6 +51,7 @@ export interface GameState {
   combo: number;
   isBackToBack: boolean;
   garbageQueue: number;
+  pendingGarbage: number;
   isGameOver: boolean;
   lastClear: ClearResult | null;
   startTime: number;

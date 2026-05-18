@@ -14,6 +14,7 @@ export interface JwtPayload {
     status: 'waiting' | 'countdown' | 'playing' | 'finished';
     roomCode?: string;
     isPublic?: boolean;
+    maxPlayers: number;
     players: RoomPlayer[];
     matchId?: string;
   series?: {
