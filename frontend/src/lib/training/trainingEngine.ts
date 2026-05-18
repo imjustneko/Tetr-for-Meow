@@ -6,8 +6,8 @@ import {
 } from '@/lib/game/constants';
 import { getSpawnPosition, getPieceMatrix } from '@/lib/game/tetrominos';
 import {
-  createBoard, isValidPosition, lockPiece, clearLines,
-  tryRotate, getGhostPosition, detectTSpin, isPerfectClear,
+  isValidPosition, lockPiece, clearLines,
+  tryRotate, detectTSpin, isPerfectClear,
   getHardDropDistance
 } from '@/lib/game/board';
 

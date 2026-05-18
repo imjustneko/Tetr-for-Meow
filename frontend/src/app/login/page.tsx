@@ -22,12 +22,13 @@ export default function LoginPage() {
     try {
       await login(email, password);
       router.push('/dashboard');
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; code?: string; message?: string };
       const msg =
-        err.response?.data?.error ||
-        (err.code === 'ERR_NETWORK' || err.message === 'Network Error'
+        e.response?.data?.error ||
+        (e.code === 'ERR_NETWORK' || e.message === 'Network Error'
           ? 'Cannot reach API — check CORS and NEXT_PUBLIC_API_URL on Vercel'
-          : err.message);
+          : e.message);
       setError(msg || 'Login failed');
     } finally {
       setLoading(false);

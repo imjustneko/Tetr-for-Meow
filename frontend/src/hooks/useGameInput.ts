@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useCallback, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useCallback, type RefObject } from 'react';
 import type { GameEngine } from '@/lib/game/engine';
 import { useSettingsStore } from '@/store/settingsStore';
 
@@ -40,7 +40,7 @@ export function useGameInput(
   // Store sounds in a ref so handleAction/useEffect don't re-run on every render.
   // (useGameSounds returns new function references each render, which would kill the RAF loop.)
   const soundsRef = useRef(sounds);
-  soundsRef.current = sounds;
+  useLayoutEffect(() => { soundsRef.current = sounds; });
 
   const hardHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heldKeys = useRef<Set<string>>(new Set());

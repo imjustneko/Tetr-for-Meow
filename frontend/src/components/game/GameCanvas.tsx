@@ -56,27 +56,25 @@ export function GameCanvas({
     }
     const strong = cur.linesCleared >= 3 || cur.isTSpin;
 
-    setFlash({ key: now, kind });
+    const flashDuration = kind === 'tspin' ? 320 : kind === 'clear-3' ? 280 : kind === 'clear-2' ? 240 : 200;
+    const shakeDur = strong ? 380 : 260;
 
-    // Trigger shake via DOM class manipulation (avoids React remount)
+    queueMicrotask(() => setFlash({ key: now, kind }));
+    const t1 = setTimeout(() => setFlash(null), flashDuration);
+
+    // Trigger shake via DOM class list (avoids React remount / re-render for animation)
     const el = wrapperRef.current;
     if (el && !shakeRef.current) {
       shakeRef.current = true;
       el.classList.remove('board-shake-sm', 'board-shake-md');
       void el.offsetWidth; // force reflow to restart animation
       el.classList.add(strong ? 'board-shake-md' : 'board-shake-sm');
-      const shakeDur = strong ? 380 : 260;
       const ts = setTimeout(() => {
         el.classList.remove('board-shake-sm', 'board-shake-md');
         shakeRef.current = false;
       }, shakeDur);
-      const flashDuration = kind === 'tspin' ? 320 : kind === 'clear-3' ? 280 : kind === 'clear-2' ? 240 : 200;
-      const t1 = setTimeout(() => setFlash(null), flashDuration);
-      return () => { clearTimeout(ts); clearTimeout(t1); };
+      return () => { clearTimeout(t1); clearTimeout(ts); };
     }
-
-    const flashDuration = kind === 'tspin' ? 320 : kind === 'clear-3' ? 280 : kind === 'clear-2' ? 240 : 200;
-    const t1 = setTimeout(() => setFlash(null), flashDuration);
     return () => clearTimeout(t1);
   }, [gameState.lastClear]);
 

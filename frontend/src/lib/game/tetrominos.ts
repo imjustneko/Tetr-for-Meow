@@ -331,7 +331,7 @@ export function getPieceMatrix(type: PieceType, rotation: 0 | 1 | 2 | 3): CellVa
   return PIECE_MATRICES[type][rotation];
 }
 
-export function getSpawnPosition(type: PieceType): { x: number; y: number } {
+export function getSpawnPosition(_type: PieceType): { x: number; y: number } {
   // Spawn into the hidden buffer (row 0..HIDDEN_ROWS-1 live above the visible playfield).
   // Keeping y=0 (instead of negative) makes top-out + line clears behave consistently.
   return { x: 3, y: 0 };

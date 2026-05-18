@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { Navbar } from '@/components/layout/Navbar';
 import { VersusClient } from '@/components/multiplayer/VersusClient';
 import { useAuthStore } from '@/store/authStore';
-import { Button } from '@/components/ui/Button';
 import { connectSocket, getSocket } from '@/lib/socket';
 
 type PublicRoom = { id: string; host: string; mode: string; roomCode: string };

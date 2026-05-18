@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 const DEFAULT_HOLD_MS = 720;
@@ -18,14 +18,14 @@ export function useHoldEscToHub(
   const downAt = useRef<number | null>(null);
   const rafRef = useRef(0);
   const optsRef = useRef(options);
-  optsRef.current = options;
+  useLayoutEffect(() => { optsRef.current = options; });
   const holdMs = options?.holdMs ?? DEFAULT_HOLD_MS;
 
   useEffect(() => {
     if (!enabled) {
       downAt.current = null;
       cancelAnimationFrame(rafRef.current);
-      setProgress(0);
+      queueMicrotask(() => setProgress(0));
       return;
     }
 

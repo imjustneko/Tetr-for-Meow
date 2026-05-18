@@ -1,5 +1,5 @@
 import type { Board, ActivePiece, CellValue, Position } from './types';
-import { BOARD_WIDTH, BOARD_HEIGHT, BOARD_TOTAL_HEIGHT, HIDDEN_ROWS } from './constants';
+import { BOARD_WIDTH, BOARD_TOTAL_HEIGHT, HIDDEN_ROWS } from './constants';
 import { getPieceMatrix, WALL_KICKS_JLSTZ, WALL_KICKS_I } from './tetrominos';
 
 export function createBoard(): Board {

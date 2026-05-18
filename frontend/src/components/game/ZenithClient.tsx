@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { connectSocket, disconnectSocket, getSocket, resetSocket } from '@/lib/socket';
 import { useGameEngine } from '@/hooks/useGameEngine';
@@ -68,9 +68,9 @@ export function ZenithClient({ currentUserId }: Props) {
   );
 
   const startGameRef = useRef(startGame);
-  startGameRef.current = startGame;
   const receiveGarbageRef = useRef(receiveGarbage);
-  receiveGarbageRef.current = receiveGarbage;
+  useLayoutEffect(() => { startGameRef.current = startGame; });
+  useLayoutEffect(() => { receiveGarbageRef.current = receiveGarbage; });
 
   useEffect(() => {
     if (phase === 'playing') playfieldRef.current?.focus({ preventScroll: true });
