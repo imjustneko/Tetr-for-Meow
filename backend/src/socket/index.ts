@@ -85,6 +85,25 @@ function generateRoomCode(): string {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
 }
 
+function getPublicRoomsList() {
+  const list: { id: string; host: string; mode: string; roomCode: string }[] = [];
+  for (const [, room] of rooms) {
+    if (room.isPublic && room.status === 'waiting' && room.players.length < 2 && room.roomCode) {
+      list.push({
+        id: room.id,
+        host: room.players[0]?.username ?? '?',
+        mode: room.mode,
+        roomCode: room.roomCode,
+      });
+    }
+  }
+  return list;
+}
+
+function broadcastPublicRooms(io: AuthedIoServer): void {
+  io.to('public_lobby').emit('public_rooms', getPublicRoomsList());
+}
+
 export function initSocket(io: AuthedIoServer): void {
   io.use((socket, next) => {
     const token = socket.handshake.auth?.token;
@@ -103,6 +122,31 @@ export function initSocket(io: AuthedIoServer): void {
   io.on('connection', (socket: AuthedSocket) => {
     const user = socket.data.user;
     console.log(`[Socket] Connected: ${user.username} (${socket.id})`);
+
+    // Always put everyone in the lobby channel so public room updates reach them
+    void socket.join('public_lobby');
+
+    socket.on('request_public_rooms', () => {
+      socket.emit('public_rooms', getPublicRoomsList());
+    });
+
+    socket.on('create_public_room', ({ mode }: { mode?: string }) => {
+      const roomCode = generateRoomCode();
+      const roomMode = normalizeQueueMode(mode);
+      const room: GameRoom = {
+        id: roomCode,
+        mode: roomMode,
+        status: 'waiting',
+        roomCode,
+        isPublic: true,
+        players: [],
+        matchResolved: false,
+      };
+      rooms.set(roomCode, room);
+      joinRoom(socket, roomCode, user, io);
+      socket.emit('room_created', { roomCode });
+      broadcastPublicRooms(io);
+    });
 
     socket.on('join_queue', (payload?: { mode?: string }) => {
       const queueMode = normalizeQueueMode(payload?.mode);
@@ -336,6 +380,9 @@ function joinRoom(
 
   if (room.players.length === 2) {
     io.to(roomId).emit('match_found', { roomId });
+    broadcastPublicRooms(io);
+  } else if (room.isPublic) {
+    broadcastPublicRooms(io);
   }
 }
 
@@ -354,6 +401,7 @@ async function leaveRoom(socket: AuthedSocket, io: AuthedIoServer): Promise<void
 
   if (room.players.length === 0) {
     rooms.delete(roomId);
+    broadcastPublicRooms(io);
     return;
   }
 

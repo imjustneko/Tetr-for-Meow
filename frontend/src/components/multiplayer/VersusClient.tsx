@@ -49,11 +49,12 @@ type Props = {
   startWith: VersusStart;
   joinCode?: string;
   currentUserId: string | null;
+  isPublic?: boolean;
 };
 
 const BOARD_SYNC_MS = 120;
 
-export function VersusClient({ mode, startWith, joinCode, currentUserId }: Props) {
+export function VersusClient({ mode, startWith, joinCode, currentUserId, isPublic }: Props) {
   const cellSize = usePlayfieldCellSize();
   const playfieldRef = useRef<HTMLDivElement>(null);
   const [phase, setPhase] = useState<Phase>('idle');
@@ -67,8 +68,8 @@ export function VersusClient({ mode, startWith, joinCode, currentUserId }: Props
   const topOutSent = useRef(false);
   const lastBoardEmit = useRef(0);
   const joinedOnce = useRef(false);
-  const propsRef = useRef({ mode, startWith, joinCode });
-  propsRef.current = { mode, startWith, joinCode };
+  const propsRef = useRef({ mode, startWith, joinCode, isPublic });
+  propsRef.current = { mode, startWith, joinCode, isPublic };
 
   const escOpts = useMemo(
     () => ({
@@ -142,7 +143,11 @@ export function VersusClient({ mode, startWith, joinCode, currentUserId }: Props
         socket.emit('join_queue', { mode: propsRef.current.mode === 'league' ? 'league' : 'versus' });
         setPhase('queued');
       } else if (sw === 'create') {
-        socket.emit('create_room', { mode: 'versus' });
+        if (propsRef.current.isPublic) {
+          socket.emit('create_public_room', { mode: propsRef.current.mode === 'league' ? 'league' : 'versus' });
+        } else {
+          socket.emit('create_room', { mode: 'versus' });
+        }
       } else if (sw === 'join' && jc?.trim()) {
         socket.emit('join_room', { roomCode: jc.trim().toUpperCase() });
       }

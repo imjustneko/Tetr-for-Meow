@@ -13,6 +13,7 @@ export interface JwtPayload {
     mode: string;
     status: 'waiting' | 'countdown' | 'playing' | 'finished';
     roomCode?: string;
+    isPublic?: boolean;
     players: RoomPlayer[];
     matchId?: string;
   series?: {
