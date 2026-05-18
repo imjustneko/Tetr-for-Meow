@@ -549,36 +549,25 @@ export class TrainingEngine {
     }
   }
 
-  // SONIC DROP: teleport to ghost position but DO NOT lock — wait for lock delay
-  // This is what you want: Space = drop instantly, but piece stays there
-  // and only locks after LOCK_DELAY or when you press Space again
+  // HARD DROP: teleport to ghost position and lock immediately (single Space press)
+  // lastMoveWasRotation is preserved so T-spin detection works correctly:
+  // rotate into slot → press Space → T-spin detected ✓
   hardDrop(): void {
     if (!this.activePiece || this.isPaused || this.isGameOver) return;
 
     const dist = getHardDropDistance(this.board, this.activePiece);
-    if (dist === 0) {
-      // Already on ground — lock now (second Space press)
-      this.lastPlacedPiece = this.activePiece.type;
-      this.lockActive();
-      return;
+    if (dist > 0) {
+      this.activePiece = {
+        ...this.activePiece,
+        position: {
+          ...this.activePiece.position,
+          y: this.activePiece.position.y + dist,
+        },
+      };
     }
 
-    // Teleport to bottom
-    this.activePiece = {
-      ...this.activePiece,
-      position: {
-        ...this.activePiece.position,
-        y: this.activePiece.position.y + dist,
-      },
-    };
-
-    // Start lock timer immediately (piece is now on ground)
-    this.isOnGround = true;
-    this.lockTimer = 0;
-    this.gravityAcc = 0;
-    this.emitState();
-    // Piece will lock after LOCK_DELAY via the game loop
-    // Player can still rotate/move during this window
+    this.lastPlacedPiece = this.activePiece.type;
+    this.lockActive();
   }
 
   rotateClockwise(): void { this.rotate(1); }
