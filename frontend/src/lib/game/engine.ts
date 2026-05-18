@@ -63,6 +63,7 @@ export class GameEngine {
       isBackToBack: false,
       garbageQueue: 0,
       pendingGarbage: 0,
+      bufferedGarbage: 0,
       isGameOver: false,
       lastClear: null,
       startTime: typeof performance !== 'undefined' ? performance.now() : Date.now(),
@@ -128,8 +129,8 @@ export class GameEngine {
   }
 
   receiveGarbage(lines: number): void {
-    // Goes to pending — can be cancelled by clearing lines before lock
-    this.state.pendingGarbage += lines;
+    // Goes to buffer — becomes counterable after current piece locks
+    this.state.bufferedGarbage += lines;
     this.onStateChange({ ...this.state });
   }
 
@@ -352,6 +353,10 @@ export class GameEngine {
     const { activePiece, board } = this.state;
     if (!activePiece) return;
 
+    // Buffered garbage becomes counterable now that a piece is locking
+    this.state.pendingGarbage += this.state.bufferedGarbage;
+    this.state.bufferedGarbage = 0;
+
     const lockedPiece: ActivePiece = {
       ...activePiece,
       position: { ...activePiece.position },
@@ -458,16 +463,18 @@ export class GameEngine {
 
     this.state.score += totalScore;
     this.state.lines += linesCleared;
-    this.state.level = Math.floor(this.state.lines / 10) + 1;
+    const linesPerLevel = this.mode.linesPerLevel ?? 10;
+    const rawLevel = Math.floor(this.state.lines / linesPerLevel) + 1;
+    const maxLevel = this.mode.maxLevel ?? 15;
+    this.state.level = Math.min(rawLevel, maxLevel);
 
-    // TETR.IO counter: attack cancels pending garbage first
+    // Counter mechanic: attack cancels pending garbage first.
+    // Remaining pending stays pending (not flushed to board) as long as you
+    // keep clearing — garbage only hits when you fail to clear a piece.
     const pending = this.state.pendingGarbage;
     const cancel = Math.min(pending, attack);
     this.state.pendingGarbage = pending - cancel;
     const netAttack = attack - cancel;
-    // Any uncancelled pending garbage becomes queued (applied to board this lock)
-    this.state.garbageQueue += this.state.pendingGarbage;
-    this.state.pendingGarbage = 0;
 
     const clearResult: ClearResult = {
       linesCleared,

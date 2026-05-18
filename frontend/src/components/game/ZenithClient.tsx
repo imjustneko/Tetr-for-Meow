@@ -68,7 +68,7 @@ export function ZenithClient({ currentUserId, subMode }: Props) {
   const escProgress = useHoldEscToHub(phase !== 'idle', escOpts);
 
   const { gameState, isFinished, finalState, startGame, engineRef, receiveGarbage } = useGameEngine(
-    { type: 'versus' },
+    { type: 'versus', linesPerLevel: 60, maxLevel: 5 },
     {
       onGarbageSend: (lines) => {
         const s = getSocket();
@@ -474,7 +474,7 @@ export function ZenithClient({ currentUserId, subMode }: Props) {
             {/* Center: garbage meter + board */}
             <div className="flex flex-col items-center gap-2">
               <div className="relative flex w-max flex-row items-stretch overflow-hidden rounded-sm shadow-lg shadow-black/40">
-                <GarbageMeter lines={gameState.garbageQueue} pending={gameState.pendingGarbage} heightPx={BOARD_HEIGHT * cellSize} />
+                <GarbageMeter lines={gameState.garbageQueue} pending={gameState.pendingGarbage} buffered={gameState.bufferedGarbage} heightPx={BOARD_HEIGHT * cellSize} />
                 <GameCanvas
                   gameState={gameState}
                   cellSize={cellSize}

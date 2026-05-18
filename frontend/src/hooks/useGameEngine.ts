@@ -41,6 +41,8 @@ export function useGameEngine(mode: GameMode, callbacks?: GameEngineCallbacks) {
   const modeType = mode.type;
   const targetLines = mode.targetLines;
   const timeLimit = mode.timeLimit;
+  const linesPerLevel = mode.linesPerLevel;
+  const maxLevel = mode.maxLevel;
   const cbRef = useRef(callbacks);
   useEffect(() => {
     cbRef.current = callbacks;
@@ -52,7 +54,7 @@ export function useGameEngine(mode: GameMode, callbacks?: GameEngineCallbacks) {
     }
     initAudio();
 
-    const modeConfig: GameMode = { type: modeType, targetLines, timeLimit };
+    const modeConfig: GameMode = { type: modeType, targetLines, timeLimit, linesPerLevel, maxLevel };
     const engine = new GameEngine(modeConfig);
     prevLevelRef.current = 1;
     if (modeType === 'practice' && cbRef.current?.practiceSequence?.length) {
@@ -109,7 +111,7 @@ export function useGameEngine(mode: GameMode, callbacks?: GameEngineCallbacks) {
     setIsActive(true);
     setIsFinished(false);
     setFinalState(null);
-  }, [modeType, targetLines, timeLimit, initAudio, sounds]);
+  }, [modeType, targetLines, timeLimit, linesPerLevel, maxLevel, initAudio, sounds]);
 
   const restartGame = useCallback(() => {
     soundEngine.stopMusic();

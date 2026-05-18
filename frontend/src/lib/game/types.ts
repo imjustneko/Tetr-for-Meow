@@ -52,6 +52,7 @@ export interface GameState {
   isBackToBack: boolean;
   garbageQueue: number;
   pendingGarbage: number;
+  bufferedGarbage: number;
   isGameOver: boolean;
   lastClear: ClearResult | null;
   startTime: number;
@@ -63,6 +64,10 @@ export interface GameMode {
   type: 'solo' | 'sprint' | 'ultra' | 'versus' | 'practice';
   targetLines?: number;
   timeLimit?: number;
+  /** Lines to clear before levelling up (default 10). Higher = slower gravity escalation. */
+  linesPerLevel?: number;
+  /** Hard cap on gravity level (default 15). */
+  maxLevel?: number;
 }
 
 export type GameAction =
