@@ -21,13 +21,30 @@ import { BOARD_HEIGHT } from '@/lib/game/constants';
 
 type Phase = 'idle' | 'queued' | 'waiting' | 'countdown' | 'playing' | 'ended';
 
+interface ReviveMission {
+  partnerUserId: string;
+  partnerUsername: string;
+  linesNeeded: number;
+  linesCleared: number;
+}
+
 interface Props {
   currentUserId: string | null;
+  subMode: 'open' | 'solo' | 'duo';
 }
 
 const BOARD_SYNC_MS = 120;
 
-export function ZenithClient({ currentUserId }: Props) {
+// Team colour cycling for duo mode
+const TEAM_COLOURS: Record<string, string> = {
+  A: 'text-cyan-400',
+  B: 'text-pink-400',
+  C: 'text-green-400',
+  D: 'text-yellow-400',
+  E: 'text-purple-400',
+};
+
+export function ZenithClient({ currentUserId, subMode }: Props) {
   const cellSize = usePlayfieldCellSize();
   const playfieldRef = useRef<HTMLDivElement>(null);
   const [phase, setPhase] = useState<Phase>('idle');
@@ -40,6 +57,9 @@ export function ZenithClient({ currentUserId }: Props) {
   const [playerCount, setPlayerCount] = useState(0);
   const [maxPlayers, setMaxPlayers] = useState(10);
   const [waitSeconds, setWaitSeconds] = useState(15);
+  const [teams, setTeams] = useState<Record<string, string>>({});
+  const [reviveMission, setReviveMission] = useState<ReviveMission | null>(null);
+  const [waitingForRevive, setWaitingForRevive] = useState(false);
   const topOutSent = useRef(false);
   const lastBoardEmit = useRef(0);
   const joinedOnce = useRef(false);
@@ -81,8 +101,15 @@ export function ZenithClient({ currentUserId }: Props) {
     if (!isFinished || !finalState?.isGameOver || topOutSent.current) return;
     topOutSent.current = true;
     const s = getSocket();
-    if (s.connected) s.emit('zenith_top_out');
-  }, [isFinished, finalState]);
+    if (s.connected) {
+      if (subMode === 'duo') {
+        s.emit('zenith_top_out');
+        setWaitingForRevive(true);
+      } else {
+        s.emit('zenith_top_out');
+      }
+    }
+  }, [isFinished, finalState, subMode]);
 
   const joinQueue = useCallback(() => {
     if (joinedOnce.current) return;
@@ -95,27 +122,43 @@ export function ZenithClient({ currentUserId }: Props) {
     setPhase('queued');
 
     const onConnect = () => {
-      socket.emit('join_zenith');
+      socket.emit('join_zenith', { subMode });
     };
 
-    const onRoomJoined = (payload: { roomId: string; room: { players: { userId: string; username: string }[]; maxPlayers?: number; status: string } }) => {
+    const onRoomJoined = (payload: {
+      roomId: string;
+      room: { players: { userId: string; username: string }[]; maxPlayers?: number; status: string; teams?: Record<string, string> };
+    }) => {
       const names = new Map<string, string>();
       payload.room.players.forEach((p) => names.set(p.userId, p.username));
       setOpponentNames(names);
       setPlayerCount(payload.room.players.length);
       setMaxPlayers(payload.room.maxPlayers ?? 10);
-      setPhase('waiting');
+      if (payload.room.teams) setTeams(payload.room.teams);
+      // If joining a game in progress, stay queued — game_start will arrive immediately
+      if (payload.room.status !== 'playing') setPhase('waiting');
     };
 
-    const onRoomUpdate = (room: { players: { userId: string; username: string; alive: boolean }[]; status: string; maxPlayers?: number; altitude?: Record<string, number> }) => {
+    const onRoomUpdate = (room: {
+      players: { userId: string; username: string; alive: boolean }[];
+      status: string;
+      maxPlayers?: number;
+      altitude?: Record<string, number>;
+      teams?: Record<string, string>;
+    }) => {
       const names = new Map<string, string>();
       room.players.forEach((p) => names.set(p.userId, p.username));
       setOpponentNames(names);
       setPlayerCount(room.players.length);
       if (room.maxPlayers) setMaxPlayers(room.maxPlayers);
+      if (room.teams) setTeams(room.teams);
       if (room.status === 'playing') setPhase('playing');
       else if (room.status === 'countdown') setPhase('countdown');
       else if (room.status === 'waiting') setPhase('waiting');
+    };
+
+    const onTeams = (t: Record<string, string>) => {
+      setTeams(t);
     };
 
     const onCountdown = (p: { count: number }) => {
@@ -128,6 +171,8 @@ export function ZenithClient({ currentUserId }: Props) {
       setPhase('playing');
       setOpponentBoards(new Map());
       topOutSent.current = false;
+      setWaitingForRevive(false);
+      setReviveMission(null);
       startGameRef.current();
     };
 
@@ -159,12 +204,61 @@ export function ZenithClient({ currentUserId }: Props) {
       }
     };
 
-    const onGameOver = (p: { winner?: string | null; winnerUsername?: string | null; leaderboard?: ZenithEntry[] }) => {
+    // Duo: partner was KO'd — start revive mission
+    const onPartnerKo = (p: {
+      ko_userId: string;
+      ko_username: string;
+      reviver_userId: string;
+      linesNeeded: number;
+    }) => {
+      if (p.reviver_userId === currentUserId) {
+        setReviveMission({
+          partnerUserId: p.ko_userId,
+          partnerUsername: p.ko_username,
+          linesNeeded: p.linesNeeded,
+          linesCleared: 0,
+        });
+      }
+    };
+
+    // Duo: revive mission progress update
+    const onReviveProgress = (p: { reviverUserId: string; linesCleared: number; linesNeeded: number }) => {
+      if (p.reviverUserId === currentUserId) {
+        setReviveMission((prev) =>
+          prev ? { ...prev, linesCleared: p.linesCleared, linesNeeded: p.linesNeeded } : prev
+        );
+      }
+    };
+
+    // Duo: someone was revived
+    const onRevive = (p: { revivedUserId: string; reviverUserId: string; reviverUsername: string }) => {
+      if (p.revivedUserId === currentUserId) {
+        // I got revived — restart game engine
+        topOutSent.current = false;
+        setWaitingForRevive(false);
+        setReviveMission(null);
+        setBanner(null);
+        startGameRef.current();
+      } else if (p.reviverUserId === currentUserId) {
+        // I revived my partner
+        setReviveMission(null);
+        setBanner(`${p.revivedUserId === currentUserId ? 'You are' : p.revivedUserId} revived!`);
+        setTimeout(() => setBanner(null), 2000);
+      }
+    };
+
+    const onGameOver = (p: {
+      winner?: string | null;
+      winnerUsername?: string | null;
+      leaderboard?: ZenithEntry[];
+    }) => {
       engineRef.current?.stop();
       setPhase('ended');
+      setWaitingForRevive(false);
+      setReviveMission(null);
       if (p.leaderboard) setLeaderboard(p.leaderboard);
       if (p.winner === currentUserId) {
-        setBanner(`You win! Tower cleared!`);
+        setBanner('You win! Tower cleared!');
       } else if (p.winnerUsername) {
         setBanner(`${p.winnerUsername} reached the top!`);
       } else {
@@ -175,12 +269,16 @@ export function ZenithClient({ currentUserId }: Props) {
     socket.on('connect', onConnect);
     socket.on('room_joined', onRoomJoined);
     socket.on('room_update', onRoomUpdate);
+    socket.on('zenith_teams', onTeams);
     socket.on('countdown', onCountdown);
     socket.on('game_start', onGameStart);
     socket.on('zenith_garbage', onZenithGarbage);
     socket.on('opponent_board', onOppBoard);
     socket.on('zenith_leaderboard', onLeaderboard);
     socket.on('zenith_ko', onKo);
+    socket.on('zenith_partner_ko', onPartnerKo);
+    socket.on('zenith_revive_progress', onReviveProgress);
+    socket.on('zenith_revive', onRevive);
     socket.on('zenith_game_over', onGameOver);
 
     if (socket.connected) onConnect();
@@ -191,18 +289,22 @@ export function ZenithClient({ currentUserId }: Props) {
       socket.off('connect', onConnect);
       socket.off('room_joined', onRoomJoined);
       socket.off('room_update', onRoomUpdate);
+      socket.off('zenith_teams', onTeams);
       socket.off('countdown', onCountdown);
       socket.off('game_start', onGameStart);
       socket.off('zenith_garbage', onZenithGarbage);
       socket.off('opponent_board', onOppBoard);
       socket.off('zenith_leaderboard', onLeaderboard);
       socket.off('zenith_ko', onKo);
+      socket.off('zenith_partner_ko', onPartnerKo);
+      socket.off('zenith_revive_progress', onReviveProgress);
+      socket.off('zenith_revive', onRevive);
       socket.off('zenith_game_over', onGameOver);
       disconnectSocket();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-join queue on mount
+  // Auto-join on mount
   useEffect(() => {
     joinQueue();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -215,6 +317,12 @@ export function ZenithClient({ currentUserId }: Props) {
     return () => clearInterval(iv);
   }, [phase]);
 
+  // Derived duo info
+  const myTeamId = teams[currentUserId ?? ''];
+  const partner = myTeamId
+    ? leaderboard.find((e) => teams[e.userId] === myTeamId && e.userId !== currentUserId)
+    : null;
+
   // Pick a random alive opponent to show
   const aliveOpponents = leaderboard.filter((e) => e.alive && e.userId !== currentUserId);
   const shownOpponentId = aliveOpponents[0]?.userId ?? null;
@@ -222,6 +330,9 @@ export function ZenithClient({ currentUserId }: Props) {
   const shownName = shownOpponentId ? (opponentNames.get(shownOpponentId) ?? 'Opponent') : 'Opponent';
 
   const smallCell = Math.max(10, Math.floor(cellSize * 0.55));
+
+  const subModeLabel =
+    subMode === 'solo' ? 'Solo Climb' : subMode === 'duo' ? 'Duo' : 'Quick Play';
 
   return (
     <div className="relative w-full max-w-6xl text-white">
@@ -247,22 +358,33 @@ export function ZenithClient({ currentUserId }: Props) {
       {(phase === 'waiting' || phase === 'queued') && (
         <div className="flex flex-col items-center gap-6 py-16">
           <div className="text-4xl">🏰</div>
-          <h2 className="text-2xl font-black uppercase tracking-tight text-orange-400">Quick Play</h2>
-          <p className="text-sm text-zinc-400">
-            {playerCount} / {maxPlayers} players · starts in {waitSeconds}s
-          </p>
-          <div className="w-48 overflow-hidden rounded-full border border-orange-500/30 bg-zinc-900">
-            <div
-              className="h-2 bg-gradient-to-r from-orange-600 to-yellow-400 transition-all duration-1000"
-              style={{ width: `${((15 - waitSeconds) / 15) * 100}%` }}
-            />
-          </div>
-          <div className="flex flex-col gap-1 text-center text-xs text-zinc-500">
-            {[...opponentNames.values()].map((name, i) => (
-              <span key={i}>{name}</span>
-            ))}
-          </div>
-          <Button variant="ghost" onClick={() => { getSocket().emit('leave_room'); disconnectSocket(); window.location.href = '/play/zenith'; }}>
+          <h2 className="text-2xl font-black uppercase tracking-tight text-orange-400">{subModeLabel}</h2>
+
+          {subMode === 'solo' ? (
+            <p className="text-sm text-zinc-400">Starting…</p>
+          ) : (
+            <>
+              <p className="text-sm text-zinc-400">
+                {playerCount} / {maxPlayers} players · starts in {waitSeconds}s
+              </p>
+              <div className="w-48 overflow-hidden rounded-full border border-orange-500/30 bg-zinc-900">
+                <div
+                  className="h-2 bg-gradient-to-r from-orange-600 to-yellow-400 transition-all duration-1000"
+                  style={{ width: `${((15 - waitSeconds) / 15) * 100}%` }}
+                />
+              </div>
+              <div className="flex flex-col gap-1 text-center text-xs text-zinc-500">
+                {[...opponentNames.values()].map((name, i) => (
+                  <span key={i}>{name}</span>
+                ))}
+              </div>
+            </>
+          )}
+
+          <Button
+            variant="ghost"
+            onClick={() => { getSocket().emit('leave_room'); disconnectSocket(); window.location.href = '/play/zenith'; }}
+          >
             Cancel
           </Button>
         </div>
@@ -285,12 +407,53 @@ export function ZenithClient({ currentUserId }: Props) {
       {/* Active game */}
       {(phase === 'playing' || (phase === 'ended' && gameState)) && gameState && (
         <GamePlayfield playfieldRef={playfieldRef}>
+
+          {/* Revive mission banner (duo — I need to revive partner) */}
+          {reviveMission && (
+            <div className="mb-3 w-full rounded-xl border border-cyan-500/40 bg-cyan-900/20 px-4 py-3">
+              <p className="text-center text-xs font-bold uppercase tracking-widest text-cyan-300">
+                REVIVE {reviveMission.partnerUsername} — clear {reviveMission.linesNeeded - reviveMission.linesCleared} more lines
+              </p>
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-800">
+                <div
+                  className="h-full bg-cyan-400 transition-all duration-200"
+                  style={{ width: `${(reviveMission.linesCleared / reviveMission.linesNeeded) * 100}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Waiting for revive overlay (duo — I died, waiting) */}
+          {waitingForRevive && isFinished && phase === 'playing' && (
+            <div className="pointer-events-none fixed inset-0 z-30 flex items-center justify-center bg-black/60">
+              <div className="text-center">
+                <p className="text-2xl font-black text-cyan-300">Waiting for revive…</p>
+                <p className="mt-2 text-sm text-zinc-400">Your partner is clearing lines to bring you back</p>
+              </div>
+            </div>
+          )}
+
           <div className="flex w-full items-start justify-center gap-3">
 
-            {/* Left: Hold + Altitude + opponent mini-boards */}
+            {/* Left: Hold + Altitude + Duo partner info + opponent mini-boards */}
             <div className="flex flex-col items-end gap-3 pt-2">
               <HoldBox heldPiece={gameState.heldPiece} canHold={gameState.canHold} />
               <AltitudeMeter altitude={myAltitude} heightPx={BOARD_HEIGHT * cellSize - 80} />
+
+              {/* Duo: partner status */}
+              {subMode === 'duo' && partner && (
+                <div className={`flex flex-col items-end gap-0.5 rounded-lg border px-2 py-1.5 text-right text-xs ${
+                  partner.alive ? 'border-cyan-700/40 bg-cyan-900/20' : 'border-zinc-700/40 bg-zinc-900/40 opacity-60'
+                }`}>
+                  <span className={`font-bold ${TEAM_COLOURS[myTeamId ?? ''] ?? 'text-white'}`}>
+                    {partner.username}
+                  </span>
+                  <span className="font-mono text-[0.6rem] text-orange-300">{Math.round(partner.altitude)}m</span>
+                  {!partner.alive && <span className="text-[0.55rem] uppercase text-red-400">KO'd</span>}
+                  {partner.alive && <span className="text-[0.55rem] uppercase text-cyan-400">Alive</span>}
+                </div>
+              )}
+
               {/* Mini opponent boards */}
               <div className="mt-2 flex flex-col gap-2">
                 {[...opponentBoards.entries()]
@@ -315,15 +478,15 @@ export function ZenithClient({ currentUserId }: Props) {
                 <GameCanvas
                   gameState={gameState}
                   cellSize={cellSize}
-                  suppressGameOverOverlay={phase === 'ended'}
+                  suppressGameOverOverlay={phase === 'ended' || waitingForRevive}
                 />
-                {isFinished && phase === 'playing' && (
+                {isFinished && phase === 'playing' && !waitingForRevive && (
                   <div className="absolute inset-0 flex items-center justify-center bg-black/75">
                     <p className="text-lg font-bold text-red-400">KO'd at {Math.round(myAltitude)}m</p>
                   </div>
                 )}
               </div>
-              <GameUnderBoardBar gameState={gameState} modeLabel="Zenith" />
+              <GameUnderBoardBar gameState={gameState} modeLabel={subModeLabel} />
             </div>
 
             {/* Right: Next queue + current targeted opponent + leaderboard */}

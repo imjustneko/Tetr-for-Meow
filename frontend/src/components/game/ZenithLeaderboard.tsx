@@ -5,6 +5,7 @@ export interface ZenithEntry {
   username: string;
   altitude: number;
   alive: boolean;
+  teamId?: string;
 }
 
 interface Props {

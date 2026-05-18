@@ -3,11 +3,18 @@ export interface JwtPayload {
     username: string;
     email: string;
   }
-  
+
   export interface AuthenticatedRequest extends Express.Request {
     user?: JwtPayload;
   }
-  
+
+  export interface ReviveMission {
+    partnerId: string;
+    partnerUsername: string;
+    linesNeeded: number;
+    linesCleared: number;
+  }
+
   export interface GameRoom {
     id: string;
     mode: string;
@@ -24,12 +31,15 @@ export interface JwtPayload {
   };
   matchResolved?: boolean;
   // Zenith / Quick Play fields
-  altitude?: Record<string, number>;     // userId → meters climbed
-  garbageTargets?: Record<string, string>; // userId → target userId
-  spectators?: Set<string>;              // socket IDs watching
+  altitude?: Record<string, number>;
+  garbageTargets?: Record<string, string>;
+  spectators?: Set<string>;
   zenithStartTimer?: ReturnType<typeof setTimeout>;
+  zenithSubMode?: 'open' | 'solo' | 'duo';
+  teams?: Record<string, string>;        // userId → teamId ('A', 'B', …)
+  reviveMissions?: Record<string, ReviveMission>; // survivorUserId → mission
   }
-  
+
   export interface RoomPlayer {
     userId: string;
     username: string;
@@ -37,8 +47,9 @@ export interface JwtPayload {
     ready: boolean;
     alive: boolean;
     rating: number;
+    teamId?: string;
   }
-  
+
   export interface GameEvent {
     type: string;
     payload: Record<string, unknown>;
