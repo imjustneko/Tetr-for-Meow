@@ -29,7 +29,7 @@ export function isValidPosition(
 
       if (boardX < 0 || boardX >= BOARD_WIDTH) return false;
 
-      if (boardY >= BOARD_TOTAL_HEIGHT) return false;
+      if (boardY >= board.length) return false;
 
       if (board[boardY][boardX] !== 0) return false;
     }
@@ -46,7 +46,7 @@ export function lockPiece(board: Board, piece: ActivePiece): Board {
       if (matrix[row][col] === 0) continue;
       const boardX = piece.position.x + col;
       const boardY = piece.position.y + row;
-      if (boardY >= 0 && boardY < BOARD_TOTAL_HEIGHT) {
+      if (boardY >= 0 && boardY < newBoard.length) {
         newBoard[boardY][boardX] = matrix[row][col] as CellValue;
       }
     }
@@ -56,7 +56,9 @@ export function lockPiece(board: Board, piece: ActivePiece): Board {
 
 export function clearLines(board: Board): { board: Board; linesCleared: number } {
   const newBoard = board.filter((row) => row.some((cell) => cell === 0));
-  const linesCleared = BOARD_TOTAL_HEIGHT - newBoard.length;
+  // Use board.length (not BOARD_TOTAL_HEIGHT) so training boards (20 rows)
+  // and game boards (23 rows) both keep their original height after clearing.
+  const linesCleared = board.length - newBoard.length;
 
   const emptyRows = Array.from({ length: linesCleared }, () => Array(BOARD_WIDTH).fill(0) as CellValue[]);
 

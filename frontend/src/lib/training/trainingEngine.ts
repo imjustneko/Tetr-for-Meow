@@ -1,8 +1,8 @@
 import { GameState, ClearResult, ActivePiece, Board, PieceType, ClearType } from '@/lib/game/types';
 import { Lesson, LessonStep } from './lessons';
 import {
-  BOARD_HEIGHT, BOARD_WIDTH, GRAVITY_TABLE,
-  LOCK_DELAY, MAX_LOCK_RESETS
+  BOARD_HEIGHT, GRAVITY_TABLE,
+  MAX_LOCK_RESETS
 } from '@/lib/game/constants';
 import { getSpawnPosition, getPieceMatrix } from '@/lib/game/tetrominos';
 import {
@@ -428,8 +428,8 @@ export class TrainingEngine {
         this.isOnGround = true;
         this.lockTimer += delta;
 
-        // Lock after LOCK_DELAY ms of sitting on ground
-        if (this.lockTimer >= LOCK_DELAY) {
+        // Lock after 300ms (shorter than game's 500ms so training feels snappy)
+        if (this.lockTimer >= 300) {
           this.lastPlacedPiece = this.activePiece.type;
           this.lockActive();
           this.animFrame = requestAnimationFrame(this.loop);
@@ -549,25 +549,35 @@ export class TrainingEngine {
     }
   }
 
-  // HARD DROP: teleport to ghost position and lock immediately (single Space press)
-  // lastMoveWasRotation is preserved so T-spin detection works correctly:
-  // rotate into slot → press Space → T-spin detected ✓
+  // TRAINING DROP: sonic drop to ghost position (Space = drop).
+  // Piece auto-locks after LOCK_DELAY (300ms), giving time to rotate for T-spins.
+  // If piece is already on ground, Space locks immediately — no double-press confusion.
   hardDrop(): void {
     if (!this.activePiece || this.isPaused || this.isGameOver) return;
 
     const dist = getHardDropDistance(this.board, this.activePiece);
-    if (dist > 0) {
-      this.activePiece = {
-        ...this.activePiece,
-        position: {
-          ...this.activePiece.position,
-          y: this.activePiece.position.y + dist,
-        },
-      };
+
+    if (dist === 0) {
+      // Already on ground — lock now (avoids needing to wait for auto-lock)
+      this.lastPlacedPiece = this.activePiece.type;
+      this.lockActive();
+      return;
     }
 
-    this.lastPlacedPiece = this.activePiece.type;
-    this.lockActive();
+    // Teleport to ghost position — piece sits on ground waiting for lock timer
+    this.activePiece = {
+      ...this.activePiece,
+      position: {
+        ...this.activePiece.position,
+        y: this.activePiece.position.y + dist,
+      },
+    };
+    this.isOnGround = true;
+    this.lockTimer = 0;
+    this.gravityAcc = 0;
+    this.emitState();
+    // Piece auto-locks after LOCK_DELAY via game loop.
+    // Player can still rotate during this window for T-spins.
   }
 
   rotateClockwise(): void { this.rotate(1); }
