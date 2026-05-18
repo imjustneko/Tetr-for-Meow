@@ -35,6 +35,8 @@ export interface JwtPayload {
   garbageTargets?: Record<string, string>;
   spectators?: Set<string>;
   zenithStartTimer?: ReturnType<typeof setTimeout>;
+  zenithGarbageTimer?: ReturnType<typeof setInterval>;
+  zenithGameStartTime?: number;
   zenithSubMode?: 'open' | 'solo' | 'duo';
   teams?: Record<string, string>;        // userId → teamId ('A', 'B', …)
   reviveMissions?: Record<string, ReviveMission>; // survivorUserId → mission

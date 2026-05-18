@@ -109,6 +109,43 @@ function broadcastPublicRooms(io: AuthedIoServer): void {
 const ZENITH_MAX_PLAYERS = 10;
 const ZENITH_START_WAIT_MS = 15_000;
 const REVIVE_LINES_NEEDED = 6;
+const ZENITH_GARBAGE_TICK_MS = 10_000; // check every 10 s
+const ZENITH_GRACE_MS = 20_000;        // no garbage for first 20 s
+
+// Lines of server garbage to send per tick based on altitude + elapsed time
+function calcServerGarbage(altitude: number, elapsedMs: number): number {
+  if (elapsedMs < ZENITH_GRACE_MS) return 0;
+  if (altitude < 50)   return 1;
+  if (altitude < 200)  return 1;
+  if (altitude < 400)  return 2;
+  if (altitude < 650)  return 2;
+  if (altitude < 900)  return 3;
+  if (altitude < 1200) return 3;
+  return Math.min(4 + Math.floor((altitude - 1200) / 400), 8);
+}
+
+function startZenithGarbageTick(io: AuthedIoServer, room: GameRoom): void {
+  room.zenithGameStartTime = Date.now();
+  room.zenithGarbageTimer = setInterval(() => {
+    if (room.status !== 'playing') {
+      clearInterval(room.zenithGarbageTimer);
+      room.zenithGarbageTimer = undefined;
+      return;
+    }
+    const elapsed = Date.now() - (room.zenithGameStartTime ?? Date.now());
+    for (const player of room.players.filter((p) => p.alive)) {
+      const alt = room.altitude?.[player.userId] ?? 0;
+      const lines = calcServerGarbage(alt, elapsed);
+      if (lines > 0) {
+        io.to(room.id).emit('zenith_garbage', {
+          to: player.userId,
+          lines,
+          from: 'SERVER',
+        });
+      }
+    }
+  }, ZENITH_GARBAGE_TICK_MS);
+}
 
 function buildZenithLeaderboard(room: GameRoom) {
   return room.players
@@ -455,6 +492,8 @@ export function initSocket(io: AuthedIoServer): void {
       const aliveTeams = getAliveTeams(room);
       if (aliveTeams.length <= 1) {
         room.status = 'finished';
+        clearInterval(room.zenithGarbageTimer);
+        room.zenithGarbageTimer = undefined;
         const winner = room.players.find((p) => p.alive) ?? null;
         io.to(roomId).emit('zenith_game_over', {
           winner: winner?.userId ?? null,
@@ -719,6 +758,8 @@ async function leaveRoom(socket: AuthedSocket, io: AuthedIoServer): Promise<void
   socket.leave(roomId);
 
   if (room.players.length === 0) {
+    clearInterval(room.zenithGarbageTimer);
+    room.zenithGarbageTimer = undefined;
     rooms.delete(roomId);
     broadcastPublicRooms(io);
     return;
@@ -842,6 +883,7 @@ function startCountdown(io: AuthedIoServer, room: GameRoom): void {
       room.status = 'playing';
       room.players.forEach((p) => { p.alive = true; p.ready = true; });
       io.to(room.id).emit('game_start', { roomId: room.id });
+      if (room.mode === 'zenith') startZenithGarbageTick(io, room);
       return;
     }
     io.to(room.id).emit('countdown', { count });
