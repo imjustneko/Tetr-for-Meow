@@ -104,6 +104,52 @@ function broadcastPublicRooms(io: AuthedIoServer): void {
   io.to('public_lobby').emit('public_rooms', getPublicRoomsList());
 }
 
+// ── Zenith helpers ────────────────────────────────────────────────────────────
+
+const ZENITH_MAX_PLAYERS = 10;
+const ZENITH_START_WAIT_MS = 15_000; // start after 15s if ≥2 players
+
+function buildZenithLeaderboard(room: GameRoom) {
+  return room.players
+    .map((p) => ({
+      userId: p.userId,
+      username: p.username,
+      altitude: room.altitude?.[p.userId] ?? 0,
+      alive: p.alive,
+    }))
+    .sort((a, b) => b.altitude - a.altitude);
+}
+
+function reassignGarbageTargets(room: GameRoom): void {
+  const alive = room.players.filter((p) => p.alive);
+  if (alive.length < 2) return;
+  room.garbageTargets = {};
+  // Each player targets the next player in shuffled list
+  const shuffled = [...alive].sort(() => Math.random() - 0.5);
+  for (let i = 0; i < shuffled.length; i++) {
+    room.garbageTargets[shuffled[i].userId] = shuffled[(i + 1) % shuffled.length].userId;
+  }
+}
+
+// ── Spectate helpers ──────────────────────────────────────────────────────────
+
+const spectatorToRoom = new Map<string, string>(); // socketId → roomId
+
+function getSpectatorBoards(room: GameRoom, io: AuthedIoServer, spectatorSocket: { id: string; emit: (ev: string, data: unknown) => void }) {
+  // Send current room state to new spectator
+  spectatorSocket.emit('spectate_init', {
+    roomId: room.id,
+    players: room.players.map((p) => ({
+      userId: p.userId,
+      username: p.username,
+      alive: p.alive,
+      altitude: room.altitude?.[p.userId] ?? 0,
+    })),
+    status: room.status,
+    mode: room.mode,
+  });
+}
+
 export function initSocket(io: AuthedIoServer): void {
   io.use((socket, next) => {
     const token = socket.handshake.auth?.token;
@@ -128,6 +174,125 @@ export function initSocket(io: AuthedIoServer): void {
 
     socket.on('request_public_rooms', () => {
       socket.emit('public_rooms', getPublicRoomsList());
+    });
+
+    // ── Spectate ─────────────────────────────────────────────────────────────
+    socket.on('spectate_room', ({ roomId }: { roomId: string }) => {
+      const code = roomId?.trim?.()?.toUpperCase?.() ?? '';
+      const room = rooms.get(code);
+      if (!room) { socket.emit('spectate_error', { message: 'Room not found' }); return; }
+      if (!room.spectators) room.spectators = new Set();
+      room.spectators.add(socket.id);
+      spectatorToRoom.set(socket.id, code);
+      void socket.join(code);
+      getSpectatorBoards(room, io, socket);
+    });
+
+    socket.on('stop_spectating', () => {
+      const roomId = spectatorToRoom.get(socket.id);
+      if (!roomId) return;
+      const room = rooms.get(roomId);
+      room?.spectators?.delete(socket.id);
+      spectatorToRoom.delete(socket.id);
+      socket.leave(roomId);
+    });
+
+    // ── Zenith / Quick Play ───────────────────────────────────────────────────
+    socket.on('join_zenith', () => {
+      // Find a waiting zenith room or create one
+      let zenithRoom: GameRoom | null = null;
+      for (const [, room] of rooms) {
+        if (room.mode === 'zenith' && room.status === 'waiting' && room.players.length < ZENITH_MAX_PLAYERS) {
+          zenithRoom = room;
+          break;
+        }
+      }
+      if (!zenithRoom) {
+        const id = generateRoomCode();
+        zenithRoom = {
+          id,
+          mode: 'zenith',
+          status: 'waiting',
+          maxPlayers: ZENITH_MAX_PLAYERS,
+          players: [],
+          altitude: {},
+          garbageTargets: {},
+          spectators: new Set(),
+          matchResolved: false,
+        };
+        rooms.set(id, zenithRoom);
+      }
+      joinRoom(socket, zenithRoom.id, user, io);
+
+      // Start countdown timer when first player joins
+      const rId = zenithRoom.id;
+      if (!zenithRoom.zenithStartTimer && zenithRoom.players.length >= 1) {
+        zenithRoom.zenithStartTimer = setTimeout(() => {
+          const r = rooms.get(rId);
+          if (!r || r.status !== 'waiting' || r.players.length < 2) return;
+          r.players.forEach((p) => { p.ready = true; });
+          startCountdown(io, r);
+        }, ZENITH_START_WAIT_MS);
+      }
+    });
+
+    // Player reports line clears → server tracks altitude and routes garbage
+    socket.on('zenith_clear', ({ linesCleared, attack }: { linesCleared: number; attack: number }) => {
+      const roomId = playerToRoom.get(socket.id);
+      if (!roomId) return;
+      const room = rooms.get(roomId);
+      if (!room || room.mode !== 'zenith' || room.status !== 'playing') return;
+
+      if (!room.altitude) room.altitude = {};
+      const alt = room.altitude[user.userId] ?? 0;
+      room.altitude[user.userId] = alt + linesCleared + Math.floor(attack * 0.5);
+
+      // Route garbage to current target
+      const targetId = room.garbageTargets?.[user.userId];
+      if (targetId && attack > 0) {
+        const targetPlayer = room.players.find((p) => p.userId === targetId);
+        if (targetPlayer?.alive) {
+          io.to(roomId).emit('zenith_garbage', { to: targetId, lines: attack, from: user.userId });
+        } else {
+          // Target was KO'd → reassign and retry with next target
+          reassignGarbageTargets(room);
+          const newTarget = room.garbageTargets?.[user.userId];
+          if (newTarget) {
+            io.to(roomId).emit('zenith_garbage', { to: newTarget, lines: attack, from: user.userId });
+          }
+        }
+      }
+
+      // Broadcast updated leaderboard
+      io.to(roomId).emit('zenith_leaderboard', buildZenithLeaderboard(room));
+    });
+
+    socket.on('zenith_top_out', () => {
+      const roomId = playerToRoom.get(socket.id);
+      if (!roomId) return;
+      const room = rooms.get(roomId);
+      if (!room || room.mode !== 'zenith') return;
+
+      const player = room.players.find((p) => p.socketId === socket.id);
+      if (player && player.alive) {
+        player.alive = false;
+        const finalAlt = room.altitude?.[player.userId] ?? 0;
+        const place = room.players.filter((p) => !p.alive).length;
+        io.to(roomId).emit('zenith_ko', { userId: player.userId, username: player.username, altitude: finalAlt, place });
+        reassignGarbageTargets(room);
+        io.to(roomId).emit('zenith_leaderboard', buildZenithLeaderboard(room));
+
+        const alive = room.players.filter((p) => p.alive);
+        if (alive.length <= 1) {
+          room.status = 'finished';
+          const winner = alive[0] ?? null;
+          io.to(roomId).emit('zenith_game_over', {
+            winner: winner?.userId ?? null,
+            winnerUsername: winner?.username ?? null,
+            leaderboard: buildZenithLeaderboard(room),
+          });
+        }
+      }
     });
 
     socket.on('create_public_room', ({ mode, maxPlayers }: { mode?: string; maxPlayers?: number }) => {
@@ -348,6 +513,12 @@ export function initSocket(io: AuthedIoServer): void {
 
     socket.on('disconnect', () => {
       console.log(`[Socket] Disconnected: ${user.username}`);
+      // Clean up spectator state
+      const spectatedRoom = spectatorToRoom.get(socket.id);
+      if (spectatedRoom) {
+        rooms.get(spectatedRoom)?.spectators?.delete(socket.id);
+        spectatorToRoom.delete(socket.id);
+      }
       void leaveRoom(socket, io);
     });
   });
@@ -514,6 +685,13 @@ async function finishRound(
 function startCountdown(io: AuthedIoServer, room: GameRoom): void {
   if (room.status === 'finished') return;
   room.status = 'countdown';
+  // Initialize zenith altitude + targets
+  if (room.mode === 'zenith') {
+    room.altitude = {};
+    room.garbageTargets = {};
+    room.players.forEach((p) => { if (room.altitude) room.altitude[p.userId] = 0; });
+    reassignGarbageTargets(room);
+  }
   io.to(room.id).emit('room_update', sanitizeRoom(room));
   let count = 3;
   io.to(room.id).emit('countdown', { count: 3 });
@@ -541,6 +719,7 @@ function sanitizeRoom(room: GameRoom) {
     status: room.status,
     roomCode: room.roomCode,
     maxPlayers: room.maxPlayers ?? 2,
+    altitude: room.altitude ?? {},
     series: room.series
       ? {
           bestOf: room.series.bestOf,

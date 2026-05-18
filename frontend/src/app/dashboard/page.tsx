@@ -67,9 +67,10 @@ export default function DashboardPage() {
         {/* ── Play modes ── */}
         <p className="mb-3 text-[0.6rem] font-bold uppercase tracking-[0.25em] text-zinc-600">Play</p>
         <div className="animate-slide-up-d1 flex flex-col gap-2.5">
-          <MenuMegaButton href="/multiplayer"       icon="MP" title="Multiplayer"  subtitle="Ranked 1v1 and online matches"          tone="multiplayer" />
+          <MenuMegaButton href="/play/zenith"        icon="ZN" title="Quick Play"   subtitle="Scale the Zenith Tower — solo battle royale" tone="multiplayer" />
+          <MenuMegaButton href="/multiplayer"       icon="MP" title="Multiplayer"  subtitle="Ranked 1v1 and online matches"          tone="arcade" />
           <MenuMegaButton href="/play/solo"         icon="1P" title="Solo"         subtitle="Practice, sprint, and ultra modes"      tone="solo" />
-          <MenuMegaButton href="/train"             icon="TR" title="Training"     subtitle="Lessons, drills, and skill paths"       tone="arcade" />
+          <MenuMegaButton href="/train"             icon="TR" title="Training"     subtitle="Lessons, drills, and skill paths"       tone="config" />
           <MenuMegaButton href="/multiplayer/custom" icon="RM" title="Custom room"  subtitle="Play with friends using a room code"   tone="config" />
         </div>
 

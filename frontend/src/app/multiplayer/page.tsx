@@ -204,16 +204,23 @@ export default function MultiplayerPage() {
                       {room.mode === 'league' ? 'League (BO3)' : 'Ranked (BO1)'}
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setJoinCode(room.roomCode);
-                      enterView('public_join');
-                    }}
-                    className="rounded-lg bg-zinc-700 px-3 py-1.5 text-sm font-bold text-white transition-colors hover:bg-zinc-500"
-                  >
-                    Join
-                  </button>
+                  <div className="flex gap-2">
+                    <Link href={`/play/spectate?room=${room.roomCode}`}>
+                      <button type="button" className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-400 transition-colors hover:text-white">
+                        Watch
+                      </button>
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setJoinCode(room.roomCode);
+                        enterView('public_join');
+                      }}
+                      className="rounded-lg bg-zinc-700 px-3 py-1.5 text-sm font-bold text-white transition-colors hover:bg-zinc-500"
+                    >
+                      Join
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

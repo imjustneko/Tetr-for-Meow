@@ -23,6 +23,11 @@ export interface JwtPayload {
     wins: Record<string, number>;
   };
   matchResolved?: boolean;
+  // Zenith / Quick Play fields
+  altitude?: Record<string, number>;     // userId → meters climbed
+  garbageTargets?: Record<string, string>; // userId → target userId
+  spectators?: Set<string>;              // socket IDs watching
+  zenithStartTimer?: ReturnType<typeof setTimeout>;
   }
   
   export interface RoomPlayer {
