@@ -202,6 +202,11 @@ export function ZenithClient({ currentUserId }: Props) {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-join queue on mount
+  useEffect(() => {
+    joinQueue();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Countdown for waiting room
   useEffect(() => {
     if (phase !== 'waiting') return;
